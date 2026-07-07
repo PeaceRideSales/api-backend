@@ -36,6 +36,7 @@ async function bootstrap() {
       process.env.ADMIN_URL || 'http://localhost:5174',
       // Allow Telegram WebApp origin
       'https://web.telegram.org',
+      'https://peaceridesales.vercel.app',
     ],
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
     allowedHeaders: ['Content-Type', 'Authorization'],
