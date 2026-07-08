@@ -23,28 +23,31 @@ export class PayoutService {
     // Get verified drivers grouped by agent
     const { data: drivers, error: driversErr } = await this.supabase.admin
       .from('drivers')
-      .select('registered_by, status')
+      .select('registered_by, status, payout_amount')
       .eq('status', 'VERIFIED');
 
     if (driversErr) throw new Error(driversErr.message);
 
     // Build per-agent payout breakdown
-    const driversByAgent: Record<string, number> = {};
+    const verifiedByAgent: Record<string, { count: number, payout: number }> = {};
     for (const d of (drivers || [])) {
-      driversByAgent[d.registered_by] = (driversByAgent[d.registered_by] || 0) + 1;
+      if (!verifiedByAgent[d.registered_by]) verifiedByAgent[d.registered_by] = { count: 0, payout: 0 };
+      verifiedByAgent[d.registered_by].count += 1;
+      // Default to 100 if for some reason legacy drivers have no payout_amount
+      verifiedByAgent[d.registered_by].payout += Number(d.payout_amount ?? 100); 
     }
 
     let totalPayout = 0;
     const agentBreakdown = (agents || []).map(agent => {
-      const price = Number(agent.price_per_driver ?? globalPrice);
-      const verifiedCount = driversByAgent[agent.id] || 0;
-      const payout = verifiedCount * price;
+      const verifiedCount = verifiedByAgent[agent.id]?.count || 0;
+      const payout = verifiedByAgent[agent.id]?.payout || 0;
       totalPayout += payout;
+      
       return {
         id: agent.id,
         full_name: agent.full_name,
         telegram_username: agent.telegram_username,
-        price_per_driver: price,
+        price_per_driver: Number(agent.price_per_driver ?? globalPrice),
         has_custom_price: agent.price_per_driver !== null && agent.price_per_driver !== undefined,
         payment_method: agent.payment_method,
         payment_details: agent.payment_details,

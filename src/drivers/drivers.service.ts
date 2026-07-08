@@ -13,6 +13,7 @@ export interface CreateDriverDto {
   full_name: string;
   phone: string;
   license_plate: string;
+  vehicle_category: string;
   car_model: string;
   location: string;
   document_url?: string;
@@ -42,6 +43,7 @@ export class DriversService {
           full_name: dto.full_name,
           phone: dto.phone,
           license_plate: dto.license_plate,
+          vehicle_category: dto.vehicle_category,
           car_model: dto.car_model,
           location: dto.location,
           document_url: dto.document_url || null,
@@ -143,9 +145,37 @@ export class DriversService {
   }
 
   async verifyDriver(driverId: string, adminId: string) {
+    const globalPrice = await this.settings.getRegistrationPrice();
+
+    // 1. Get driver and agent details
+    const { data: driverInfo, error: fetchError } = await this.supabase.admin
+      .from('drivers')
+      .select('*, agent:agents!registered_by(telegram_id, price_per_driver)')
+      .eq('id', driverId)
+      .single();
+
+    if (fetchError || !driverInfo) {
+      throw new Error('Driver not found');
+    }
+
+    // 2. Calculate payout
+    // Agent custom price overrides everything. Otherwise, use vehicle category.
+    let calculatedPayout = 0;
+    const agentCustomPrice = (driverInfo.agent as any)?.price_per_driver;
+
+    if (agentCustomPrice !== null && agentCustomPrice !== undefined) {
+      calculatedPayout = Number(agentCustomPrice);
+    } else {
+      calculatedPayout = driverInfo.vehicle_category === 'LATEST_OR_EV' ? 150 : 120;
+    }
+
+    // 3. Update driver status and save the exact payout amount
     const { data, error } = await this.supabase.admin
       .from('drivers')
-      .update({ status: 'VERIFIED', admin_note: null })
+      .update({ 
+        status: 'VERIFIED',
+        payout_amount: calculatedPayout
+      })
       .eq('id', driverId)
       .select('*, agent:agents!registered_by(telegram_id, price_per_driver)')
       .single();
@@ -159,12 +189,10 @@ export class DriversService {
     // This prevents Telegram rate limits from blocking the admin UI response
     Promise.resolve().then(async () => {
       try {
-        const globalPrice = await this.settings.getRegistrationPrice();
-        const price = Number((data.agent as any)?.price_per_driver ?? globalPrice);
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const chatId = (data.agent as any)?.telegram_id;
         if (token && chatId) {
-          const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *$${price.toFixed(2)}*!`;
+          const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *$${calculatedPayout.toFixed(2)}*!`;
           await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
