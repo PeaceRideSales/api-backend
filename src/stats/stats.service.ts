@@ -58,7 +58,7 @@ export class StatsService {
     // Fetch drivers from last 30 days
     const { data: drivers, error } = await this.supabase.admin
       .from('drivers')
-      .select('created_at, car_type, location')
+      .select('created_at, car_model, location')
       .gte('created_at', thirtyDaysAgo.toISOString());
 
     if (error) throw new Error(error.message);
@@ -72,8 +72,8 @@ export class StatsService {
       trendMap.set(d.toISOString().split('T')[0], 0);
     }
     
-    // 2. Car Type (Donut Chart)
-    const carTypeMap = new Map<string, number>();
+    // 2. Car Model (Donut Chart)
+    const carModelMap = new Map<string, number>();
 
     // 3. Location (Bar Chart)
     const locationMap = new Map<string, number>();
@@ -85,9 +85,9 @@ export class StatsService {
         trendMap.set(dateKey, trendMap.get(dateKey)! + 1);
       }
 
-      // Car Type
-      const ct = driver.car_type || 'OTHER';
-      carTypeMap.set(ct, (carTypeMap.get(ct) || 0) + 1);
+      // Car Model
+      const cm = driver.car_model || 'Unknown';
+      carModelMap.set(cm, (carModelMap.get(cm) || 0) + 1);
 
       // Location
       const loc = driver.location || 'Unknown';
@@ -96,9 +96,10 @@ export class StatsService {
 
     const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
     
-    const carTypes = Array.from(carTypeMap.entries())
+    const carModels = Array.from(carModelMap.entries())
       .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value); // Sort desc
+      .sort((a, b) => b.value - a.value) // Sort desc
+      .slice(0, 8); // Top 8 models
       
     const locations = Array.from(locationMap.entries())
       .map(([name, count]) => ({ name, count }))
@@ -106,7 +107,7 @@ export class StatsService {
 
     return {
       trend,
-      carTypes,
+      carModels,
       locations
     };
   }
