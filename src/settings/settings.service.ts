@@ -23,11 +23,14 @@ export class SettingsService {
     return data;
   }
 
-  async updateSettings(dto: { driver_registration_price: number }, adminId?: string) {
+  async updateSettings(dto: { driver_registration_price: number, google_sheet_id?: string }, adminId?: string) {
     // Try UPDATE first (most common path — row exists)
     const { data: updated, error: updateError } = await this.supabase.admin
       .from('system_settings')
-      .update({ driver_registration_price: dto.driver_registration_price })
+      .update({ 
+        driver_registration_price: dto.driver_registration_price,
+        google_sheet_id: dto.google_sheet_id
+      })
       .eq('id', 1)
       .select()
       .single();
@@ -36,7 +39,8 @@ export class SettingsService {
       // Row existed and was updated — log and return
       if (adminId) {
         await this.auditLogs.logAction(adminId, 'UPDATE_SETTINGS', 'system', '1', {
-          new_price: dto.driver_registration_price
+          new_price: dto.driver_registration_price,
+          google_sheet_id: dto.google_sheet_id
         }).catch(() => { /* audit log is best-effort */ });
       }
       return updated;
@@ -45,7 +49,11 @@ export class SettingsService {
     // Row doesn't exist yet — insert it
     const { data: inserted, error: insertError } = await this.supabase.admin
       .from('system_settings')
-      .insert({ id: 1, driver_registration_price: dto.driver_registration_price })
+      .insert({ 
+        id: 1, 
+        driver_registration_price: dto.driver_registration_price,
+        google_sheet_id: dto.google_sheet_id
+      })
       .select()
       .single();
 
@@ -56,7 +64,8 @@ export class SettingsService {
 
     if (adminId) {
       await this.auditLogs.logAction(adminId, 'UPDATE_SETTINGS', 'system', '1', {
-        new_price: dto.driver_registration_price
+        new_price: dto.driver_registration_price,
+        google_sheet_id: dto.google_sheet_id
       }).catch(() => { /* audit log is best-effort */ });
     }
 

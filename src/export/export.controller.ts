@@ -1,6 +1,7 @@
-import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { ExportService } from './export.service';
+import { GoogleSheetsService } from './google-sheets.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -9,7 +10,10 @@ import { Roles } from '../auth/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class ExportController {
-  constructor(private export_: ExportService) {}
+  constructor(
+    private export_: ExportService,
+    private googleSheets: GoogleSheetsService,
+  ) {}
 
   /** Download Excel for ALL agents */
   @Get('all')
@@ -39,5 +43,14 @@ export class ExportController {
       'Content-Length': buffer.length,
     });
     res.end(buffer);
+  }
+
+  /** Sync data to Google Sheets */
+  @Post('google-sheets')
+  async syncToGoogleSheets(
+    @Query('start_date') start_date?: string,
+    @Query('end_date') end_date?: string,
+  ) {
+    return this.googleSheets.syncAllDrivers({ start_date, end_date });
   }
 }

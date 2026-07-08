@@ -37,6 +37,7 @@ async function bootstrap() {
       // Allow Telegram WebApp origin
       'https://web.telegram.org',
       'https://peaceridesales.vercel.app',
+      'https://peace-ride-sales-admin.vercel.app',
     ],
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
     allowedHeaders: ['Content-Type', 'Authorization'],
