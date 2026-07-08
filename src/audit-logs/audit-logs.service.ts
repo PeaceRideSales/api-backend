@@ -38,7 +38,7 @@ export class AuditLogsService {
     
     const { data, count, error } = await this.supabase.admin
       .from('audit_logs')
-      .select('*, admin:auth.users(email)', { count: 'exact' })
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
       
