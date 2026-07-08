@@ -38,6 +38,7 @@ async function bootstrap() {
       'https://web.telegram.org',
       'https://peaceridesales.vercel.app',
       'https://peace-ride-sales-admin.vercel.app',
+      'https://admin-portal-peaceride.vercel.app',
     ],
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
     allowedHeaders: ['Content-Type', 'Authorization'],
