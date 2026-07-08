@@ -13,13 +13,12 @@ import { DriversService } from './drivers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { IsString, IsEnum, IsOptional, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsUrl } from 'class-validator';
 
 class CreateDriverDto {
   @IsString() full_name: string;
   @IsString() phone: string;
   @IsString() license_plate: string;
-  @IsEnum(['SEDAN', 'SUV', 'PICKUP', 'VAN', 'BUS', 'OTHER']) car_type: string;
   @IsString() car_model: string;
   @IsString() location: string;
   @IsOptional() @IsString() document_url?: string;

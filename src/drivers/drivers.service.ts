@@ -13,7 +13,6 @@ export interface CreateDriverDto {
   full_name: string;
   phone: string;
   license_plate: string;
-  car_type: string;
   car_model: string;
   location: string;
   document_url?: string;
@@ -59,7 +58,6 @@ export class DriversService {
         full_name: dto.full_name,
         phone: dto.phone,
         license_plate: dto.license_plate,
-        car_type: dto.car_type,
         car_model: dto.car_model,
         location: dto.location,
         document_url: dto.document_url || null,
