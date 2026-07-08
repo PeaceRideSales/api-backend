@@ -52,63 +52,12 @@ export class StatsService {
   }
 
   async getChartData() {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    // Fetch drivers from last 30 days
-    const { data: drivers, error } = await this.supabase.admin
-      .from('drivers')
-      .select('created_at, car_model, location')
-      .gte('created_at', thirtyDaysAgo.toISOString());
-
-    if (error) throw new Error(error.message);
-
-    // 1. Trend (Area Chart): Registrations per day
-    const trendMap = new Map<string, number>();
-    // Pre-fill last 30 days with 0
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      trendMap.set(d.toISOString().split('T')[0], 0);
-    }
+    const { data, error } = await this.supabase.admin.rpc('get_dashboard_stats', { days_back: 30 });
     
-    // 2. Car Model (Donut Chart)
-    const carModelMap = new Map<string, number>();
-
-    // 3. Location (Bar Chart)
-    const locationMap = new Map<string, number>();
-
-    for (const driver of drivers || []) {
-      // Trend
-      const dateKey = driver.created_at.split('T')[0];
-      if (trendMap.has(dateKey)) {
-        trendMap.set(dateKey, trendMap.get(dateKey)! + 1);
-      }
-
-      // Car Model
-      const cm = driver.car_model || 'Unknown';
-      carModelMap.set(cm, (carModelMap.get(cm) || 0) + 1);
-
-      // Location
-      const loc = driver.location || 'Unknown';
-      locationMap.set(loc, (locationMap.get(loc) || 0) + 1);
+    if (error) {
+      throw new Error(`Failed to fetch chart data: ${error.message}`);
     }
 
-    const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
-    
-    const carModels = Array.from(carModelMap.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value) // Sort desc
-      .slice(0, 8); // Top 8 models
-      
-    const locations = Array.from(locationMap.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count); // Sort desc
-
-    return {
-      trend,
-      carModels,
-      locations
-    };
+    return data;
   }
 }

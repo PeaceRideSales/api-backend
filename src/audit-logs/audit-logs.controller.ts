@@ -13,7 +13,11 @@ export class AuditLogsController {
   @Roles('admin')
   getLogs(@Query('page') page: string, @Query('limit') limit: string) {
     const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 50;
+    let limitNum = parseInt(limit, 10) || 50;
+    
+    // Security: Hard cap the limit to prevent memory exhaustion (OOM)
+    if (limitNum > 100) limitNum = 100;
+
     return this.auditLogsService.getLogs(pageNum, limitNum);
   }
 }

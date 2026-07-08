@@ -1,15 +1,10 @@
 import {
   Controller,
   Post,
-  UseInterceptors,
-  UploadedFile,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
+  Body,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { SupabaseService } from '../supabase/supabase.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,39 +14,32 @@ import { v4 as uuidv4 } from 'uuid';
 export class UploadController {
   constructor(private readonly supabase: SupabaseService) {}
 
-  @Post('document')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadDocument(
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB limit
-          new FileTypeValidator({ fileType: /(image\/jpeg|image\/png|image\/webp|application\/pdf)/ }),
-        ],
-      }),
-    )
-    file: Express.Multer.File,
-  ) {
-    if (!file) throw new BadRequestException('File is required');
+  @Post('document/presigned')
+  async getPresignedUrl(@Body('filename') originalFilename: string) {
+    if (!originalFilename) throw new BadRequestException('Filename is required');
 
-    const ext = file.originalname.split('.').pop() || 'bin';
+    const ext = originalFilename.split('.').pop() || 'bin';
     const filename = `${uuidv4()}.${ext}`;
 
-    const { error } = await this.supabase.admin.storage
+    // Get a signed URL valid for 60 seconds
+    const { data, error } = await this.supabase.admin.storage
       .from('documents')
-      .upload(filename, file.buffer, {
-        contentType: file.mimetype,
-        upsert: false,
-      });
+      .createSignedUploadUrl(filename);
 
     if (error) {
-      throw new BadRequestException(`Upload failed: ${error.message}`);
+      throw new BadRequestException(`Failed to generate upload URL: ${error.message}`);
     }
 
-    const { data } = this.supabase.admin.storage
+    // Also pre-calculate the public URL so the client knows what it will be
+    const { data: publicData } = this.supabase.admin.storage
       .from('documents')
       .getPublicUrl(filename);
 
-    return { url: data.publicUrl };
+    return { 
+      signedUrl: data.signedUrl,
+      publicUrl: publicData.publicUrl,
+      token: data.token,
+      path: data.path
+    };
   }
 }

@@ -35,39 +35,41 @@ export class DriversService {
       throw new ForbiddenException('Your account is pending approval');
     }
 
-    // Check for duplicate phone or license plate
-    const { data: existing } = await this.supabase.admin
-      .from('drivers')
-      .select('phone, license_plate')
-      .or(`phone.eq.${dto.phone},license_plate.eq.${dto.license_plate}`)
-      .limit(1)
-      .maybeSingle();
+    try {
+      const { data, error } = await this.supabase.admin
+        .from('drivers')
+        .insert({
+          full_name: dto.full_name,
+          phone: dto.phone,
+          license_plate: dto.license_plate,
+          car_model: dto.car_model,
+          location: dto.location,
+          document_url: dto.document_url || null,
+          registered_by: agent.id,
+        })
+        .select()
+        .single();
 
-    if (existing) {
-      if (existing.phone === dto.phone) {
-        throw new BadRequestException('This phone number is already registered by another agent.');
+      if (error) {
+        // Handle Postgres unique constraint violation (code 23505) gracefully
+        if (error.code === '23505') {
+          if (error.message.includes('phone')) {
+            throw new BadRequestException('This phone number is already registered.');
+          }
+          if (error.message.includes('license_plate')) {
+            throw new BadRequestException('This license plate is already registered.');
+          }
+          throw new BadRequestException('This driver is already registered.');
+        }
+        throw new Error(error.message);
       }
-      if (existing.license_plate === dto.license_plate) {
-        throw new BadRequestException('This license plate is already registered by another agent.');
+      return data;
+    } catch (e: any) {
+      if (e instanceof BadRequestException || e instanceof ForbiddenException) {
+        throw e;
       }
+      throw new Error(`Registration failed: ${e.message}`);
     }
-
-    const { data, error } = await this.supabase.admin
-      .from('drivers')
-      .insert({
-        full_name: dto.full_name,
-        phone: dto.phone,
-        license_plate: dto.license_plate,
-        car_model: dto.car_model,
-        location: dto.location,
-        document_url: dto.document_url || null,
-        registered_by: agent.id,
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return data;
   }
 
   async findAll(filters: { agent_id?: string; start_date?: string; end_date?: string }, page = 1, limit = 50) {
@@ -153,22 +155,26 @@ export class DriversService {
     await this.auditLogs.logAction(adminId, 'VERIFY_DRIVER', 'driver', driverId, { driverName: data.full_name });
 
     // Send Telegram notification
-    try {
-      const globalPrice = await this.settings.getRegistrationPrice();
-      const price = Number((data.agent as any)?.price_per_driver ?? globalPrice);
-      const token = process.env.TELEGRAM_BOT_TOKEN;
-      const chatId = (data.agent as any)?.telegram_id;
-      if (token && chatId) {
-        const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *$${price.toFixed(2)}*!`;
-        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-        });
+    // Send Telegram notification asynchronously (fire and forget)
+    // This prevents Telegram rate limits from blocking the admin UI response
+    Promise.resolve().then(async () => {
+      try {
+        const globalPrice = await this.settings.getRegistrationPrice();
+        const price = Number((data.agent as any)?.price_per_driver ?? globalPrice);
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        const chatId = (data.agent as any)?.telegram_id;
+        if (token && chatId) {
+          const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *$${price.toFixed(2)}*!`;
+          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
+          });
+        }
+      } catch (e) {
+        console.error('Failed to send Telegram notification:', e);
       }
-    } catch (e) {
-      console.error('Failed to send Telegram notification:', e);
-    }
+    });
 
     return data;
   }
@@ -186,20 +192,23 @@ export class DriversService {
     await this.auditLogs.logAction(adminId, 'DECLINE_DRIVER', 'driver', driverId, { adminNote, driverName: data.full_name });
 
     // Send Telegram notification
-    try {
-      const token = process.env.TELEGRAM_BOT_TOKEN;
-      const chatId = (data.agent as any)?.telegram_id;
-      if (token && chatId) {
-        const text = `❌ *Driver Declined*\nYour driver *${data.full_name}* (${data.license_plate}) was declined.${adminNote ? `\nReason: _${adminNote}_` : ''}`;
-        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-        });
+    // Send Telegram notification asynchronously
+    Promise.resolve().then(async () => {
+      try {
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        const chatId = (data.agent as any)?.telegram_id;
+        if (token && chatId) {
+          const text = `❌ *Driver Declined*\nYour driver *${data.full_name}* (${data.license_plate}) was declined.${adminNote ? `\nReason: _${adminNote}_` : ''}`;
+          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
+          });
+        }
+      } catch (e) {
+        console.error('Failed to send Telegram notification:', e);
       }
-    } catch (e) {
-      console.error('Failed to send Telegram notification:', e);
-    }
+    });
 
     return data;
   }

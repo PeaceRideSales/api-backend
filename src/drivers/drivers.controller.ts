@@ -65,7 +65,11 @@ export class DriversController {
     @Query('limit') limit?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
-    const limitNum = limit ? parseInt(limit, 10) : 50;
+    let limitNum = limit ? parseInt(limit, 10) : 50;
+    
+    // Security: Hard cap the limit to prevent memory exhaustion (OOM)
+    if (limitNum > 100) limitNum = 100;
+
     return this.drivers.findAll({ agent_id, start_date, end_date }, pageNum, limitNum);
   }
 
