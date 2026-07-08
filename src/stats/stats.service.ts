@@ -50,4 +50,64 @@ export class StatsService {
       .map((a) => ({ ...a, driver_count: a.driver_count?.[0]?.count ?? 0 }))
       .sort((a, b) => b.driver_count - a.driver_count);
   }
+
+  async getChartData() {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Fetch drivers from last 30 days
+    const { data: drivers, error } = await this.supabase.admin
+      .from('drivers')
+      .select('created_at, car_type, location')
+      .gte('created_at', thirtyDaysAgo.toISOString());
+
+    if (error) throw new Error(error.message);
+
+    // 1. Trend (Area Chart): Registrations per day
+    const trendMap = new Map<string, number>();
+    // Pre-fill last 30 days with 0
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      trendMap.set(d.toISOString().split('T')[0], 0);
+    }
+    
+    // 2. Car Type (Donut Chart)
+    const carTypeMap = new Map<string, number>();
+
+    // 3. Location (Bar Chart)
+    const locationMap = new Map<string, number>();
+
+    for (const driver of drivers || []) {
+      // Trend
+      const dateKey = driver.created_at.split('T')[0];
+      if (trendMap.has(dateKey)) {
+        trendMap.set(dateKey, trendMap.get(dateKey)! + 1);
+      }
+
+      // Car Type
+      const ct = driver.car_type || 'OTHER';
+      carTypeMap.set(ct, (carTypeMap.get(ct) || 0) + 1);
+
+      // Location
+      const loc = driver.location || 'Unknown';
+      locationMap.set(loc, (locationMap.get(loc) || 0) + 1);
+    }
+
+    const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
+    
+    const carTypes = Array.from(carTypeMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value); // Sort desc
+      
+    const locations = Array.from(locationMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count); // Sort desc
+
+    return {
+      trend,
+      carTypes,
+      locations
+    };
+  }
 }

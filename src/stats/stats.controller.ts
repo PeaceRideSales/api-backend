@@ -19,4 +19,9 @@ export class StatsController {
   getLeaderboard() {
     return this.stats.getAgentLeaderboard();
   }
+
+  @Get('charts')
+  getCharts() {
+    return this.stats.getChartData();
+  }
 }
