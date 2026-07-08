@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtThrottlerGuard } from './auth/jwt-throttler.guard';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -16,6 +18,8 @@ import { PayoutModule } from './payout/payout.module';
 
 import { UploadModule } from './upload/upload.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -39,6 +43,13 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
     PayoutModule,
     UploadModule,
     AuditLogsModule,
+    TelegramModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

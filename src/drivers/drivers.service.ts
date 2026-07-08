@@ -187,22 +187,11 @@ export class DriversService {
     // Send Telegram notification
     // Send Telegram notification asynchronously (fire and forget)
     // This prevents Telegram rate limits from blocking the admin UI response
-    Promise.resolve().then(async () => {
-      try {
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        const chatId = (data.agent as any)?.telegram_id;
-        if (token && chatId) {
-          const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *$${calculatedPayout.toFixed(2)}*!`;
-          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-          });
-        }
-      } catch (e) {
-        console.error('Failed to send Telegram notification:', e);
-      }
-    });
+    const chatId = (data.agent as any)?.telegram_id;
+    if (chatId) {
+      const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *${calculatedPayout.toFixed(2)} Birr*!`;
+      await this.supabase.admin.from('telegram_queue').insert({ chat_id: String(chatId), message: text });
+    }
 
     return data;
   }
@@ -221,22 +210,11 @@ export class DriversService {
 
     // Send Telegram notification
     // Send Telegram notification asynchronously
-    Promise.resolve().then(async () => {
-      try {
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        const chatId = (data.agent as any)?.telegram_id;
-        if (token && chatId) {
-          const text = `❌ *Driver Declined*\nYour driver *${data.full_name}* (${data.license_plate}) was declined.${adminNote ? `\nReason: _${adminNote}_` : ''}`;
-          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-          });
-        }
-      } catch (e) {
-        console.error('Failed to send Telegram notification:', e);
-      }
-    });
+    const chatId = (data.agent as any)?.telegram_id;
+    if (chatId) {
+      const text = `❌ *Driver Declined*\nYour driver *${data.full_name}* (${data.license_plate}) was declined.${adminNote ? `\nReason: _${adminNote}_` : ''}`;
+      await this.supabase.admin.from('telegram_queue').insert({ chat_id: String(chatId), message: text });
+    }
 
     return data;
   }
