@@ -5,8 +5,12 @@ import * as helmet from 'helmet';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const compression = require('compression');
 
+import * as cookieParser from 'cookie-parser';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(cookieParser());
 
   // ── Security headers ─────────────────────────────────────────────────────
   app.use(helmet.default());
