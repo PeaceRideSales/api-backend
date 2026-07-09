@@ -95,4 +95,24 @@ export class AdminService {
     if (error) throw new Error(error.message);
     return data;
   }
+
+  async resetSystem(adminId: string) {
+    // Wipe all transactional tables
+    await this.supabase.admin.from('drivers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await this.supabase.admin.from('agents').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await this.supabase.admin.from('telegram_queue').delete().neq('id', 0);
+    await this.supabase.admin.from('audit_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await this.supabase.admin.from('admin_invites').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    
+    // Log that a reset occurred
+    await this.supabase.admin.from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'SYSTEM_RESET',
+      entity_type: 'system',
+      entity_id: '1',
+      details: { message: 'Production data reset performed.' }
+    });
+    
+    return { success: true, message: 'System reset complete' };
+  }
 }

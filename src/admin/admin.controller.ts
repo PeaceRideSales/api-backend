@@ -47,4 +47,12 @@ export class AdminController {
   listInvites(@Request() req) {
     return this.admin.listInvites(req.user.userId);
   }
+
+  /** Admin only — reset system for production */
+  @Post('reset')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  resetSystem(@Request() req) {
+    return this.admin.resetSystem(req.user.userId);
+  }
 }
