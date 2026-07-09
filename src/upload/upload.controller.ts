@@ -23,7 +23,7 @@ export class UploadController {
 
     // Get a signed URL valid for 60 seconds
     const { data, error } = await this.supabase.admin.storage
-      .from('documents')
+      .from('driver_documents')
       .createSignedUploadUrl(filename);
 
     if (error) {
@@ -32,7 +32,7 @@ export class UploadController {
 
     // Also pre-calculate the public URL so the client knows what it will be
     const { data: publicData } = this.supabase.admin.storage
-      .from('documents')
+      .from('driver_documents')
       .getPublicUrl(filename);
 
     return { 
