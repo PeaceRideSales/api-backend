@@ -145,12 +145,10 @@ export class DriversService {
   }
 
   async verifyDriver(driverId: string, adminId: string) {
-    const globalPrice = await this.settings.getRegistrationPrice();
-
-    // 1. Get driver and agent details
+    // 1. Get driver and full agent details
     const { data: driverInfo, error: fetchError } = await this.supabase.admin
       .from('drivers')
-      .select('*, agent:agents!registered_by(telegram_id, price_per_driver)')
+      .select('*, agent:agents!registered_by(telegram_id, full_name, price_per_driver, price_latest_model, price_older_model)')
       .eq('id', driverId)
       .single();
 
@@ -158,38 +156,54 @@ export class DriversService {
       throw new Error('Driver not found');
     }
 
-    // 2. Calculate payout
-    // Agent custom price overrides everything. Otherwise, use vehicle category.
-    let calculatedPayout = 0;
-    const agentCustomPrice = (driverInfo.agent as any)?.price_per_driver;
+    const agent = driverInfo.agent as any;
 
-    if (agentCustomPrice !== null && agentCustomPrice !== undefined) {
-      calculatedPayout = Number(agentCustomPrice);
+    // 2. Calculate payout: agent flat override > agent tier override > global tier
+    let calculatedPayout = 0;
+    if (agent?.price_per_driver !== null && agent?.price_per_driver !== undefined) {
+      // Flat per-agent custom override (overrides everything)
+      calculatedPayout = Number(agent.price_per_driver);
+    } else if (driverInfo.vehicle_category === 'LATEST_OR_EV') {
+      // Latest model: use agent tier override, or global tier
+      const globalTiers = await this.settings.getTieredPrices();
+      calculatedPayout = (agent?.price_latest_model !== null && agent?.price_latest_model !== undefined)
+        ? Number(agent.price_latest_model)
+        : globalTiers.price_latest_model;
     } else {
-      calculatedPayout = driverInfo.vehicle_category === 'LATEST_OR_EV' ? 150 : 120;
+      // Older model: use agent tier override, or global tier
+      const globalTiers = await this.settings.getTieredPrices();
+      calculatedPayout = (agent?.price_older_model !== null && agent?.price_older_model !== undefined)
+        ? Number(agent.price_older_model)
+        : globalTiers.price_older_model;
     }
 
     // 3. Update driver status and save the exact payout amount
     const { data, error } = await this.supabase.admin
       .from('drivers')
-      .update({ 
-        status: 'VERIFIED',
-        payout_amount: calculatedPayout
-      })
+      .update({ status: 'VERIFIED', payout_amount: calculatedPayout })
       .eq('id', driverId)
-      .select('*, agent:agents!registered_by(telegram_id, price_per_driver)')
+      .select('*, agent:agents!registered_by(telegram_id, full_name)')
       .single();
     if (error) throw new Error(error.message);
+
+    const updatedAgent = data.agent as any;
 
     // Log the action
     await this.auditLogs.logAction(adminId, 'VERIFY_DRIVER', 'driver', driverId, { driverName: data.full_name });
 
-    // Send Telegram notification
-    // Send Telegram notification asynchronously (fire and forget)
-    // This prevents Telegram rate limits from blocking the admin UI response
-    const chatId = (data.agent as any)?.telegram_id;
+    // Enqueue personalized Telegram notification
+    const chatId = updatedAgent?.telegram_id;
     if (chatId) {
-      const text = `✅ *Good news!*\nYour driver *${data.full_name}* (${data.license_plate}) was verified.\nYou just earned *${calculatedPayout.toFixed(2)} Birr*!`;
+      const agentName = updatedAgent?.full_name || 'Agent';
+      const categoryLabel = data.vehicle_category === 'LATEST_OR_EV' ? 'Latest Model / EV' : 'Standard Model';
+      const text =
+        `🌟 *Dear ${agentName},*\n\n` +
+        `We are pleased to inform you that your registered driver has been successfully verified.\n\n` +
+        `*Driver:* ${data.full_name}\n` +
+        `*Phone:* ${data.phone}\n` +
+        `*Vehicle:* ${data.car_model} (${categoryLabel})\n\n` +
+        `*You have earned ${calculatedPayout.toFixed(0)} Birr* for this verification. 💰\n\n` +
+        `Thank you for your continued hard work and dedication. Keep up the great effort!`;
       await this.supabase.admin.from('telegram_queue').insert({ chat_id: String(chatId), message: text });
     }
 
@@ -201,18 +215,26 @@ export class DriversService {
       .from('drivers')
       .update({ status: 'DECLINED', admin_note: adminNote || null })
       .eq('id', driverId)
-      .select('*, agent:agents!registered_by(telegram_id)')
+      .select('*, agent:agents!registered_by(telegram_id, full_name)')
       .single();
     if (error) throw new Error(error.message);
 
     // Log the action
     await this.auditLogs.logAction(adminId, 'DECLINE_DRIVER', 'driver', driverId, { adminNote, driverName: data.full_name });
 
-    // Send Telegram notification
-    // Send Telegram notification asynchronously
-    const chatId = (data.agent as any)?.telegram_id;
+    // Enqueue personalized Telegram notification
+    const agent = data.agent as any;
+    const chatId = agent?.telegram_id;
     if (chatId) {
-      const text = `❌ *Driver Declined*\nYour driver *${data.full_name}* (${data.license_plate}) was declined.${adminNote ? `\nReason: _${adminNote}_` : ''}`;
+      const agentName = agent?.full_name || 'Agent';
+      const text =
+        `📋 *Dear ${agentName},*\n\n` +
+        `We regret to inform you that after a thorough review, we were unfortunately unable to verify the following driver in our Peace Ride platform.\n\n` +
+        `*Driver:* ${data.full_name}\n` +
+        `*Phone:* ${data.phone}\n` +
+        `*Vehicle:* ${data.car_model}\n` +
+        (adminNote ? `\n*Reason:* _${adminNote}_\n` : '\n') +
+        `If you believe this is a mistake or have any questions, please do not hesitate to reach out to the Peace Ride team. We appreciate your understanding and continued efforts.`;
       await this.supabase.admin.from('telegram_queue').insert({ chat_id: String(chatId), message: text });
     }
 

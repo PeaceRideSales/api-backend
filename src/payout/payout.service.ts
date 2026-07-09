@@ -10,12 +10,12 @@ export class PayoutService {
   ) {}
 
   async getSummary() {
-    const globalPrice = await this.settings.getRegistrationPrice();
+    const globalTiers = await this.settings.getTieredPrices();
 
-    // Get all agents with their driver counts
+    // Get all approved agents with their tier overrides
     const { data: agents, error: agentsErr } = await this.supabase.admin
       .from('agents')
-      .select('id, full_name, telegram_username, status, price_per_driver, payment_method, payment_details')
+      .select('id, full_name, telegram_username, status, price_per_driver, price_latest_model, price_older_model, payment_method, payment_details')
       .eq('status', 'APPROVED');
 
     if (agentsErr) throw new Error(agentsErr.message);
@@ -33,8 +33,7 @@ export class PayoutService {
     for (const d of (drivers || [])) {
       if (!verifiedByAgent[d.registered_by]) verifiedByAgent[d.registered_by] = { count: 0, payout: 0 };
       verifiedByAgent[d.registered_by].count += 1;
-      // Default to 100 if for some reason legacy drivers have no payout_amount
-      verifiedByAgent[d.registered_by].payout += Number(d.payout_amount ?? 100); 
+      verifiedByAgent[d.registered_by].payout += Number(d.payout_amount ?? 120);
     }
 
     let totalPayout = 0;
@@ -42,13 +41,23 @@ export class PayoutService {
       const verifiedCount = verifiedByAgent[agent.id]?.count || 0;
       const payout = verifiedByAgent[agent.id]?.payout || 0;
       totalPayout += payout;
-      
+
+      const hasCustomLatest = agent.price_latest_model !== null && agent.price_latest_model !== undefined;
+      const hasCustomOlder = agent.price_older_model !== null && agent.price_older_model !== undefined;
+      const hasCustomFlat = agent.price_per_driver !== null && agent.price_per_driver !== undefined;
+
       return {
         id: agent.id,
         full_name: agent.full_name,
         telegram_username: agent.telegram_username,
-        price_per_driver: Number(agent.price_per_driver ?? globalPrice),
-        has_custom_price: agent.price_per_driver !== null && agent.price_per_driver !== undefined,
+        // Flat override (legacy)
+        price_per_driver: hasCustomFlat ? Number(agent.price_per_driver) : null,
+        has_custom_price: hasCustomFlat,
+        // Tiered overrides
+        price_latest_model: hasCustomLatest ? Number(agent.price_latest_model) : null,
+        price_older_model: hasCustomOlder ? Number(agent.price_older_model) : null,
+        has_custom_latest: hasCustomLatest,
+        has_custom_older: hasCustomOlder,
         payment_method: agent.payment_method,
         payment_details: agent.payment_details,
         verified_drivers: verifiedCount,
@@ -56,7 +65,7 @@ export class PayoutService {
       };
     });
 
-    // Also get all drivers counts per agent (pending + declined)
+    // Get all driver counts per agent
     const { data: allDrivers } = await this.supabase.admin
       .from('drivers')
       .select('registered_by, status');
@@ -77,17 +86,27 @@ export class PayoutService {
     }));
 
     return {
-      global_price: globalPrice,
+      global_price_latest_model: globalTiers.price_latest_model,
+      global_price_older_model: globalTiers.price_older_model,
       total_payout: totalPayout,
       total_verified_drivers: drivers?.length || 0,
       agents: enriched,
     };
   }
 
-  async setAgentPrice(agentId: string, price: number | null) {
+  async setAgentPrice(agentId: string, body: {
+    price_latest_model?: number | null;
+    price_older_model?: number | null;
+    price_per_driver?: number | null; // legacy flat override
+  }) {
+    const update: Record<string, any> = {};
+    if ('price_latest_model' in body) update.price_latest_model = body.price_latest_model;
+    if ('price_older_model' in body) update.price_older_model = body.price_older_model;
+    if ('price_per_driver' in body) update.price_per_driver = body.price_per_driver;
+
     const { data, error } = await this.supabase.admin
       .from('agents')
-      .update({ price_per_driver: price })
+      .update(update)
       .eq('id', agentId)
       .select()
       .single();

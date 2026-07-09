@@ -20,6 +20,7 @@ import { UploadModule } from './upload/upload.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 
 import { TelegramModule } from './telegram/telegram.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { TelegramModule } from './telegram/telegram.module';
     UploadModule,
     AuditLogsModule,
     TelegramModule,
+    NotificationsModule,
   ],
   providers: [
     {

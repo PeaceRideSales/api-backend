@@ -10,18 +10,31 @@ class UpdateSettingsDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  driver_registration_price: number;
+  @IsOptional()
+  driver_registration_price?: number;
 
   @IsString()
   @IsOptional()
   google_sheet_id?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  price_latest_model?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  price_older_model?: number;
 }
 
 @Controller('settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
-  /** Public — agents/admin can read settings (e.g. price per driver) */
+  /** Public — agents/admin can read settings */
   @Get()
   getSettings() {
     return this.settingsService.getSettings();
