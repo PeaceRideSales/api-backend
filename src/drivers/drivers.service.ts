@@ -145,39 +145,56 @@ export class DriversService {
   }
 
   async verifyDriver(driverId: string, adminId: string) {
-    // 1. Get driver and full agent details
-    const { data: driverInfo, error: fetchError } = await this.supabase.admin
-      .from('drivers')
-      .select('*, agent:agents!registered_by(telegram_id, full_name, price_per_driver, price_latest_model, price_older_model)')
-      .eq('id', driverId)
-      .single();
+    // 1. Fetch global tiered prices and driver details in parallel
+    const [globalTiers, driverResult] = await Promise.all([
+      this.settings.getTieredPrices(),
+      this.supabase.admin
+        .from('drivers')
+        .select('*, agent:agents!registered_by(telegram_id, full_name, price_per_driver, price_latest_model, price_older_model)')
+        .eq('id', driverId)
+        .single(),
+    ]);
 
-    if (fetchError || !driverInfo) {
+    if (driverResult.error || !driverResult.data) {
       throw new Error('Driver not found');
     }
 
+    const driverInfo = driverResult.data;
     const agent = driverInfo.agent as any;
+    const category = driverInfo.vehicle_category; // 'LATEST_OR_EV' | 'OLDER'
 
-    // 2. Calculate payout: agent flat override > agent tier override > global tier
-    let calculatedPayout = 0;
-    if (agent?.price_per_driver !== null && agent?.price_per_driver !== undefined) {
-      // Flat per-agent custom override (overrides everything)
+    // 2. Determine payout with explicit priority chain:
+    //    1st) Agent flat override (price_per_driver) — applies to ALL categories
+    //    2nd) Agent tier override (price_latest_model / price_older_model)
+    //    3rd) Global tier (from system_settings)
+    let calculatedPayout: number;
+    let priceSource: string;
+
+    if (agent?.price_per_driver != null) {
       calculatedPayout = Number(agent.price_per_driver);
-    } else if (driverInfo.vehicle_category === 'LATEST_OR_EV') {
-      // Latest model: use agent tier override, or global tier
-      const globalTiers = await this.settings.getTieredPrices();
-      calculatedPayout = (agent?.price_latest_model !== null && agent?.price_latest_model !== undefined)
-        ? Number(agent.price_latest_model)
-        : globalTiers.price_latest_model;
+      priceSource = `agent flat override`;
+    } else if (category === 'LATEST_OR_EV') {
+      if (agent?.price_latest_model != null) {
+        calculatedPayout = Number(agent.price_latest_model);
+        priceSource = `agent tier override (Latest/EV)`;
+      } else {
+        calculatedPayout = globalTiers.price_latest_model;
+        priceSource = `global tier (Latest/EV) = ${globalTiers.price_latest_model}`;
+      }
     } else {
-      // Older model: use agent tier override, or global tier
-      const globalTiers = await this.settings.getTieredPrices();
-      calculatedPayout = (agent?.price_older_model !== null && agent?.price_older_model !== undefined)
-        ? Number(agent.price_older_model)
-        : globalTiers.price_older_model;
+      // OLDER
+      if (agent?.price_older_model != null) {
+        calculatedPayout = Number(agent.price_older_model);
+        priceSource = `agent tier override (Older)`;
+      } else {
+        calculatedPayout = globalTiers.price_older_model;
+        priceSource = `global tier (Older) = ${globalTiers.price_older_model}`;
+      }
     }
 
-    // 3. Update driver status and save the exact payout amount
+    console.log(`[Verify] Driver=${driverInfo.full_name} | Category=${category} | Payout=${calculatedPayout} Birr | Source=${priceSource}`);
+
+    // 3. Update driver status and lock in the payout amount
     const { data, error } = await this.supabase.admin
       .from('drivers')
       .update({ status: 'VERIFIED', payout_amount: calculatedPayout })
@@ -189,13 +206,18 @@ export class DriversService {
     const updatedAgent = data.agent as any;
 
     // Log the action
-    await this.auditLogs.logAction(adminId, 'VERIFY_DRIVER', 'driver', driverId, { driverName: data.full_name });
+    await this.auditLogs.logAction(adminId, 'VERIFY_DRIVER', 'driver', driverId, {
+      driverName: data.full_name,
+      category,
+      payout: calculatedPayout,
+      priceSource,
+    });
 
     // Enqueue personalized Telegram notification
     const chatId = updatedAgent?.telegram_id;
     if (chatId) {
       const agentName = updatedAgent?.full_name || 'Agent';
-      const categoryLabel = data.vehicle_category === 'LATEST_OR_EV' ? 'Latest Model / EV' : 'Standard Model';
+      const categoryLabel = category === 'LATEST_OR_EV' ? 'Latest Model / EV' : 'Standard Model';
       const text =
         `🌟 *Dear ${agentName},*\n\n` +
         `We are pleased to inform you that your registered driver has been successfully verified.\n\n` +

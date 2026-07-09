@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
+export const DEFAULT_LATEST_PRICE = 150;
+export const DEFAULT_OLDER_PRICE  = 120;
+
 export interface TieredPrices {
   price_latest_model: number;
   price_older_model: number;
@@ -21,10 +24,23 @@ export class SettingsService {
       .eq('id', 1)
       .single();
 
-    if (error) {
-      return { id: 1, driver_registration_price: 0, price_latest_model: 150, price_older_model: 120 };
+    if (error || !data) {
+      // Column may not exist yet (migration not run), return safe defaults
+      return {
+        id: 1,
+        driver_registration_price: 0,
+        price_latest_model: DEFAULT_LATEST_PRICE,
+        price_older_model: DEFAULT_OLDER_PRICE,
+        google_sheet_id: null,
+      };
     }
-    return data;
+
+    // If columns exist but are null/missing (pre-migration row), fill defaults
+    return {
+      ...data,
+      price_latest_model: data.price_latest_model != null ? Number(data.price_latest_model) : DEFAULT_LATEST_PRICE,
+      price_older_model:  data.price_older_model  != null ? Number(data.price_older_model)  : DEFAULT_OLDER_PRICE,
+    };
   }
 
   async updateSettings(dto: {
@@ -33,49 +49,35 @@ export class SettingsService {
     price_latest_model?: number;
     price_older_model?: number;
   }, adminId?: string) {
-    const { data: updated, error: updateError } = await this.supabase.admin
+
+    const patch: Record<string, any> = {};
+    if (dto.driver_registration_price !== undefined) patch.driver_registration_price = dto.driver_registration_price;
+    if (dto.google_sheet_id           !== undefined) patch.google_sheet_id           = dto.google_sheet_id;
+    if (dto.price_latest_model        !== undefined) patch.price_latest_model        = dto.price_latest_model;
+    if (dto.price_older_model         !== undefined) patch.price_older_model         = dto.price_older_model;
+
+    // Try UPSERT first — handles both row-exists and row-missing cases
+    const { data, error } = await this.supabase.admin
       .from('system_settings')
-      .update({
-        ...(dto.driver_registration_price !== undefined && { driver_registration_price: dto.driver_registration_price }),
-        ...(dto.google_sheet_id !== undefined && { google_sheet_id: dto.google_sheet_id }),
-        ...(dto.price_latest_model !== undefined && { price_latest_model: dto.price_latest_model }),
-        ...(dto.price_older_model !== undefined && { price_older_model: dto.price_older_model }),
-      })
-      .eq('id', 1)
+      .upsert({ id: 1, ...patch }, { onConflict: 'id' })
       .select()
       .single();
 
-    if (!updateError && updated) {
-      if (adminId) {
-        await this.auditLogs.logAction(adminId, 'UPDATE_SETTINGS', 'system', '1', dto)
-          .catch(() => { /* best-effort */ });
-      }
-      return updated;
-    }
-
-    // Row doesn't exist yet — insert it
-    const { data: inserted, error: insertError } = await this.supabase.admin
-      .from('system_settings')
-      .insert({
-        id: 1,
-        driver_registration_price: dto.driver_registration_price ?? 0,
-        google_sheet_id: dto.google_sheet_id,
-        price_latest_model: dto.price_latest_model ?? 150,
-        price_older_model: dto.price_older_model ?? 120,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('[Settings] Failed to update or insert settings:', insertError.code, insertError.message);
-      throw new Error(insertError.message);
+    if (error) {
+      console.error('[Settings] Failed to save settings:', error.code, error.message);
+      throw new Error(error.message);
     }
 
     if (adminId) {
       await this.auditLogs.logAction(adminId, 'UPDATE_SETTINGS', 'system', '1', dto)
         .catch(() => { /* best-effort */ });
     }
-    return inserted;
+
+    return {
+      ...data,
+      price_latest_model: data?.price_latest_model != null ? Number(data.price_latest_model) : DEFAULT_LATEST_PRICE,
+      price_older_model:  data?.price_older_model  != null ? Number(data.price_older_model)  : DEFAULT_OLDER_PRICE,
+    };
   }
 
   async getRegistrationPrice(): Promise<number> {
@@ -86,8 +88,8 @@ export class SettingsService {
   async getTieredPrices(): Promise<TieredPrices> {
     const settings = await this.getSettings();
     return {
-      price_latest_model: Number(settings.price_latest_model) || 150,
-      price_older_model: Number(settings.price_older_model) || 120,
+      price_latest_model: settings.price_latest_model,
+      price_older_model:  settings.price_older_model,
     };
   }
 }

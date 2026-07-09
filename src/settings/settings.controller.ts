@@ -40,6 +40,12 @@ export class SettingsController {
     return this.settingsService.getSettings();
   }
 
+  /** Debug endpoint — returns live tiered prices from DB */
+  @Get('tiers')
+  getTiers() {
+    return this.settingsService.getTieredPrices();
+  }
+
   /** Admin only — update global settings */
   @Patch()
   @UseGuards(JwtAuthGuard, RolesGuard)
