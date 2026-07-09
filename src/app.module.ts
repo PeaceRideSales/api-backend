@@ -4,6 +4,7 @@ import { JwtThrottlerGuard } from './auth/jwt-throttler.guard';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { BullModule } from '@nestjs/bullmq';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
@@ -26,6 +27,16 @@ import { NotificationsModule } from './notifications/notifications.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      useFactory: () => ({
+        connection: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
+          password: process.env.REDIS_PASSWORD || undefined,
+          tls: process.env.REDIS_HOST && process.env.REDIS_HOST !== 'localhost' ? {} : undefined,
+        },
+      }),
+    }),
     ThrottlerModule.forRoot([{
       name: 'global',
       ttl: 60000,   // 60 second window

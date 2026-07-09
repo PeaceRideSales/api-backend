@@ -1,71 +1,35 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { SupabaseService } from '../supabase/supabase.service';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
 
-@Injectable()
-export class TelegramProcessor {
+@Processor('telegram')
+export class TelegramProcessor extends WorkerHost {
   private readonly logger = new Logger(TelegramProcessor.name);
-  private isProcessing = false;
 
-  constructor(private supabase: SupabaseService) {}
-
-  @Cron(CronExpression.EVERY_10_SECONDS)
-  async processQueue() {
-    if (this.isProcessing) return;
-    this.isProcessing = true;
+  async process(job: Job<{ chat_id: number; message: string }>): Promise<void> {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return;
 
     try {
-      const token = process.env.TELEGRAM_BOT_TOKEN;
-      if (!token) return; // Silent return if no bot token
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          chat_id: job.data.chat_id, 
+          text: job.data.message, 
+          parse_mode: 'Markdown' 
+        })
+      });
 
-      // 1. Fetch up to 10 pending jobs
-      const { data: jobs, error: fetchError } = await this.supabase.admin
-        .from('telegram_queue')
-        .select('*')
-        .eq('status', 'PENDING')
-        .order('created_at', { ascending: true })
-        .limit(10);
-
-      if (fetchError || !jobs || jobs.length === 0) return;
-
-      // 2. Process jobs
-      for (const job of jobs) {
-        try {
-          const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              chat_id: job.chat_id, 
-              text: job.message, 
-              parse_mode: 'Markdown' 
-            })
-          });
-
-          if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Telegram API Error: ${res.status} ${errText}`);
-          }
-
-          // Mark completed
-          await this.supabase.admin
-            .from('telegram_queue')
-            .update({ status: 'COMPLETED', processed_at: new Date().toISOString() })
-            .eq('id', job.id);
-
-        } catch (jobError: any) {
-          this.logger.error(`Failed to process telegram job ${job.id}: ${jobError.message}`);
-          // Mark failed
-          await this.supabase.admin
-            .from('telegram_queue')
-            .update({ status: 'FAILED', error: jobError.message, processed_at: new Date().toISOString() })
-            .eq('id', job.id);
-        }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Telegram API Error: ${res.status} ${errText}`);
       }
 
-    } catch (e) {
-      this.logger.error('Error in Telegram queue processor', e);
-    } finally {
-      this.isProcessing = false;
+      this.logger.log(`Successfully sent telegram message to ${job.data.chat_id}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to process telegram job ${job.id}: ${error.message}`);
+      throw error; // Let BullMQ handle retries
     }
   }
 }

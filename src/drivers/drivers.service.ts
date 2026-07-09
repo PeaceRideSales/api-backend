@@ -8,6 +8,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AgentsService } from '../agents/agents.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface CreateDriverDto {
   full_name: string;
@@ -26,6 +27,7 @@ export class DriversService {
     private agents: AgentsService,
     private settings: SettingsService,
     private auditLogs: AuditLogsService,
+    private notifications: NotificationsService,
   ) {}
 
   async create(agentTelegramId: number, dto: CreateDriverDto) {
@@ -239,7 +241,7 @@ export class DriversService {
         `*Vehicle:* ${data.car_model} (${categoryLabel})\n\n` +
         `*You have earned ${calculatedPayout.toFixed(0)} Birr* for this verification. 💰\n\n` +
         `Thank you for your continued hard work and dedication. Keep up the great effort!`;
-      await this.supabase.admin.from('telegram_queue').insert({ chat_id: String(chatId), message: text });
+      await this.notifications.queueTelegramMessage(String(chatId), text);
     }
 
     return data;
@@ -270,7 +272,7 @@ export class DriversService {
         `*Vehicle:* ${data.car_model}\n` +
         (adminNote ? `\n*Reason:* _${adminNote}_\n` : '\n') +
         `If you believe this is a mistake or have any questions, please do not hesitate to reach out to the Peace Ride team. We appreciate your understanding and continued efforts.`;
-      await this.supabase.admin.from('telegram_queue').insert({ chat_id: String(chatId), message: text });
+      await this.notifications.queueTelegramMessage(String(chatId), text);
     }
 
     return data;
