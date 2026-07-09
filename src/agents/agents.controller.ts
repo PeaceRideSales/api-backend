@@ -11,7 +11,7 @@ import { AgentsService } from './agents.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { IsEnum, IsString } from 'class-validator';
+import { IsEnum, IsString, IsOptional } from 'class-validator';
 
 class UpdateStatusDto {
   @IsEnum(['APPROVED', 'REJECTED'])
@@ -21,6 +21,12 @@ class UpdateStatusDto {
 class UpdatePaymentDetailsDto {
   @IsString() payment_method: string;
   @IsString() payment_details: string;
+}
+
+class UpdateTargetsDto {
+  @IsString() @IsOptional() daily_target?: string | number;
+  @IsString() @IsOptional() weekly_target?: string | number;
+  @IsString() @IsOptional() monthly_target?: string | number;
 }
 
 @Controller('agents')
@@ -33,6 +39,18 @@ export class AgentsController {
   @Roles('agent')
   updatePaymentDetails(@Request() req, @Body() body: UpdatePaymentDetailsDto) {
     return this.agents.updatePaymentDetails(req.user.telegramId, body.payment_method, body.payment_details);
+  }
+
+  /** Agent updates their own target goals */
+  @Patch('me/targets')
+  @Roles('agent')
+  updateTargets(@Request() req, @Body() body: UpdateTargetsDto) {
+    return this.agents.updateTargets(
+      req.user.telegramId, 
+      Number(body.daily_target || 0), 
+      Number(body.weekly_target || 0), 
+      Number(body.monthly_target || 0)
+    );
   }
 
   /** Leaderboard visible to agents and admins */

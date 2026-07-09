@@ -111,16 +111,18 @@ export class DriversService {
     if (error) throw new Error(error.message);
 
     const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const weekStart = new Date(now.getTime() - 7 * 86400000).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
     const globalTiers = await this.settings.getTieredPrices();
 
-    let thisWeek = 0, thisMonth = 0, verified = 0, pending = 0, declined = 0;
+    let thisDay = 0, thisWeek = 0, thisMonth = 0, verified = 0, pending = 0, declined = 0;
     let totalEarnings = 0;
 
     drivers.forEach(d => {
       const time = new Date(d.created_at).getTime();
+      if (time >= dayStart) thisDay++;
       if (time >= weekStart) thisWeek++;
       if (time >= monthStart) thisMonth++;
       if (d.status === 'VERIFIED') {
@@ -137,6 +139,7 @@ export class DriversService {
     return {
       stats: {
         total: drivers.length,
+        thisDay,
         thisWeek,
         thisMonth,
         verified,
@@ -146,6 +149,9 @@ export class DriversService {
         priceLatest: agentPriceLatest,
         priceOlder: agentPriceOlder,
         hasEarnings: totalEarnings > 0 || verified > 0,
+        dailyTarget: (agent as any).daily_target || 0,
+        weeklyTarget: (agent as any).weekly_target || 0,
+        monthlyTarget: (agent as any).monthly_target || 0,
       },
       drivers,
     };

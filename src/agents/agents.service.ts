@@ -76,6 +76,18 @@ export class AgentsService {
     if (error) throw new Error(error.message);
     return data;
   }
+  async updateTargets(telegramId: number, daily: number, weekly: number, monthly: number) {
+    const { data, error } = await this.supabase.admin
+      .from('agents')
+      .update({ daily_target: daily, weekly_target: weekly, monthly_target: monthly })
+      .eq('telegram_id', telegramId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   async getLeaderboard() {
     // Get all approved agents
     const { data: agents, error: agentsErr } = await this.supabase.admin
