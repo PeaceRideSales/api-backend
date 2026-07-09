@@ -314,4 +314,16 @@ export class DriversService {
 
     return updated;
   }
+
+  async updateAdminDocument(driverId: string, documentUrl: string) {
+    const { data, error } = await this.supabase.admin
+      .from('drivers')
+      .update({ document_url: documentUrl })
+      .eq('id', driverId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
 }

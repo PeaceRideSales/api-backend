@@ -84,8 +84,15 @@ export class DriversController {
   /** Admin declines a driver */
   @Patch(':id/decline')
   @Roles('admin')
-  declineDriver(@Param('id') id: string, @Body() body: DeclineDriverDto, @Request() req) {
-    return this.drivers.declineDriver(id, req.user.id, body.admin_note);
+  declineDriver(@Param('id') id: string, @Body('admin_note') note: string, @Request() req) {
+    return this.drivers.declineDriver(id, req.user.id, note);
+  }
+
+  /** Admin updates driver's document */
+  @Patch(':id/admin-document')
+  @Roles('admin')
+  updateAdminDocument(@Param('id') id: string, @Body('document_url') document_url: string) {
+    return this.drivers.updateAdminDocument(id, document_url);
   }
 
   /** Agent updates document (one-time) */
