@@ -114,20 +114,25 @@ export class DriversService {
     const weekStart = new Date(now.getTime() - 7 * 86400000).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
+    const globalTiers = await this.settings.getTieredPrices();
+
     let thisWeek = 0, thisMonth = 0, verified = 0, pending = 0, declined = 0;
+    let totalEarnings = 0;
 
     drivers.forEach(d => {
       const time = new Date(d.created_at).getTime();
       if (time >= weekStart) thisWeek++;
       if (time >= monthStart) thisMonth++;
-      if (d.status === 'VERIFIED') verified++;
+      if (d.status === 'VERIFIED') {
+        verified++;
+        totalEarnings += Number(d.payout_amount || 0);
+      }
       else if (d.status === 'DECLINED') declined++;
       else pending++;
     });
 
-    // Use agent's custom price if set, otherwise global default
-    const globalPrice = await this.settings.getRegistrationPrice();
-    const pricePerDriver = Number((agent as any).price_per_driver ?? globalPrice);
+    const agentPriceLatest = (agent as any).price_latest_model != null ? Number((agent as any).price_latest_model) : globalTiers.price_latest_model;
+    const agentPriceOlder = (agent as any).price_older_model != null ? Number((agent as any).price_older_model) : globalTiers.price_older_model;
 
     return {
       stats: {
@@ -137,8 +142,10 @@ export class DriversService {
         verified,
         pending,
         declined,
-        earnings: verified * pricePerDriver,
-        pricePerDriver,
+        earnings: totalEarnings,
+        priceLatest: agentPriceLatest,
+        priceOlder: agentPriceOlder,
+        hasEarnings: totalEarnings > 0 || verified > 0,
       },
       drivers,
     };
