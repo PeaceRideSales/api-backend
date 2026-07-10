@@ -21,6 +21,8 @@ export class AuthController {
       sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
-    return { agent: data.agent, success: true };
+    // Telegram webviews aggressively block 3rd party cookies, so we must still return the token
+    // for the mini-app to use via Authorization header.
+    return { agent: data.agent, token: data.token, success: true };
   }
 }
