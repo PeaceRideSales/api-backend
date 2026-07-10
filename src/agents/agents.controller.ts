@@ -34,6 +34,13 @@ class UpdateTargetsDto {
 export class AgentsController {
   constructor(private agents: AgentsService) {}
 
+  /** Agent gets their own profile */
+  @Get('me')
+  @Roles('agent')
+  getMe(@Request() req) {
+    return this.agents.findByTelegramId(req.user.telegramId);
+  }
+
   /** Agent updates their own payment details */
   @Patch('me/payment-details')
   @Roles('agent')
