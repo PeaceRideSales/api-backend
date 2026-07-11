@@ -47,6 +47,13 @@ export class AgentsController {
     return this.agents.findByTelegramId(req.user.telegramId);
   }
 
+  /** Agent gets only their own rank (no other agent names exposed) */
+  @Get('me/rank')
+  @Roles('agent')
+  getMyRank(@Request() req) {
+    return this.agents.getMyRank(req.user.userId);
+  }
+
   /** Agent updates their own payment details */
   @Patch('me/payment-details')
   @Roles('agent')

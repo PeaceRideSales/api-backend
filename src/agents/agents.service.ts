@@ -101,27 +101,49 @@ export class AgentsService {
 
     if (agentsErr) throw new Error(agentsErr.message);
 
-    // Get verified drivers
+    // Get all drivers with status + registered_by
     const { data: drivers, error: driversErr } = await this.supabase.admin
       .from('drivers')
-      .select('registered_by')
-      .eq('status', 'VERIFIED');
+      .select('registered_by, status');
 
     if (driversErr) throw new Error(driversErr.message);
 
-    // Count
-    const counts: Record<string, number> = {};
+    // Count verified and total per agent
+    const verifiedCounts: Record<string, number> = {};
+    const totalCounts: Record<string, number> = {};
     for (const d of drivers) {
-      counts[d.registered_by] = (counts[d.registered_by] || 0) + 1;
+      totalCounts[d.registered_by] = (totalCounts[d.registered_by] || 0) + 1;
+      if (d.status === 'VERIFIED') {
+        verifiedCounts[d.registered_by] = (verifiedCounts[d.registered_by] || 0) + 1;
+      }
     }
 
     const leaderboard = agents.map(a => ({
       id: a.id,
       name: a.full_name || `@${a.telegram_username}`,
-      verified_drivers: counts[a.id] || 0
-    })).sort((a, b) => b.verified_drivers - a.verified_drivers).slice(0, 10);
+      verified_drivers: verifiedCounts[a.id] || 0,
+      total_drivers: totalCounts[a.id] || 0,
+    })).sort((a, b) => b.verified_drivers - a.verified_drivers);
 
     return leaderboard;
+  }
+
+  async getMyRank(agentId: string) {
+    const leaderboard = await this.getLeaderboard();
+    const rank = leaderboard.findIndex(a => a.id === agentId) + 1;
+    const myEntry = leaderboard.find(a => a.id === agentId);
+    const agentAbove = rank > 1 ? leaderboard[rank - 2] : null;
+    const agentBelow = rank < leaderboard.length ? leaderboard[rank] : null;
+
+    return {
+      rank: rank || null,
+      total_agents: leaderboard.length,
+      verified_drivers: myEntry?.verified_drivers ?? 0,
+      total_drivers: myEntry?.total_drivers ?? 0,
+      drivers_to_next_rank: agentAbove ? agentAbove.verified_drivers - (myEntry?.verified_drivers ?? 0) : 0,
+      rank_above_verified: agentAbove?.verified_drivers ?? null,
+      rank_below_verified: agentBelow?.verified_drivers ?? null,
+    };
   }
 
   async appealAccount(telegramId: number, appealReason: string, documentUrl?: string, documents?: any[]) {
