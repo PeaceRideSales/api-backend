@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -7,7 +7,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 export class NotificationsService {
   constructor(
     private supabase: SupabaseService,
-    @InjectQueue('telegram') private telegramQueue: Queue,
+    @Optional() @InjectQueue('telegram') private telegramQueue: Queue,
   ) {}
 
   async findAll(page = 1, limit = 50) {
@@ -24,10 +24,26 @@ export class NotificationsService {
 
   async queueTelegramMessage(chatId: string, message: string) {
     if (!chatId || !message) return;
-    
-    await this.telegramQueue.add('sendMessage', {
+
+    // If BullMQ queue is available (Redis connected), use it
+    if (this.telegramQueue) {
+      try {
+        await this.telegramQueue.add('sendMessage', {
+          chat_id: Number(chatId),
+          message,
+        });
+        return;
+      } catch (err) {
+        console.warn('[Notifications] BullMQ unavailable, falling back to Supabase queue:', (err as Error).message);
+      }
+    }
+
+    // Fallback: write directly to the telegram_queue table
+    await this.supabase.admin.from('telegram_queue').insert({
       chat_id: Number(chatId),
-      message
+      message,
+      status: 'pending',
     });
   }
 }
+

@@ -18,6 +18,7 @@ export interface CreateDriverDto {
   car_model: string;
   location: string;
   document_url?: string;
+  documents?: any[];
 }
 
 @Injectable()
@@ -49,6 +50,7 @@ export class DriversService {
           car_model: dto.car_model,
           location: dto.location,
           document_url: dto.document_url || null,
+          documents: dto.documents || [],
           registered_by: agent.id,
         })
         .select()
@@ -119,6 +121,10 @@ export class DriversService {
 
     const globalTiers = await this.settings.getTieredPrices();
 
+    const [{ count: globalVerified }] = await Promise.all([
+      this.supabase.admin.from('drivers').select('*', { count: 'exact', head: true }).eq('status', 'VERIFIED'),
+    ]);
+
     let thisDay = 0, thisWeek = 0, thisMonth = 0, verified = 0, pending = 0, declined = 0;
     let totalEarnings = 0;
 
@@ -154,6 +160,7 @@ export class DriversService {
         dailyTarget: (agent as any).daily_target || 0,
         weeklyTarget: (agent as any).weekly_target || 0,
         monthlyTarget: (agent as any).monthly_target || 0,
+        globalVerified: globalVerified || 0,
       },
       drivers,
     };
@@ -278,7 +285,7 @@ export class DriversService {
     return data;
   }
 
-  async updateDocument(driverId: string, agentTelegramId: number, documentUrl: string) {
+  async updateDocument(driverId: string, agentTelegramId: number, documentUrl?: string, documents?: any[]) {
     // Find the driver
     const { data: driver, error: fetchErr } = await this.supabase.admin
       .from('drivers')
@@ -299,9 +306,13 @@ export class DriversService {
     }
 
     // Update driver document
+    const updatePayload: any = {};
+    if (documentUrl !== undefined) updatePayload.document_url = documentUrl;
+    if (documents !== undefined) updatePayload.documents = documents;
+
     const { data: updated, error: updateErr } = await this.supabase.admin
       .from('drivers')
-      .update({ document_url: documentUrl })
+      .update(updatePayload)
       .eq('id', driverId)
       .select()
       .single();
@@ -328,4 +339,90 @@ export class DriversService {
     if (error) throw new Error(error.message);
     return data;
   }
+
+  async appealDriver(
+    driverId: string,
+    agentTelegramId: number,
+    appealReason: string,
+    updatedFields: {
+      full_name?: string;
+      phone?: string;
+      car_model?: string;
+      license_plate?: string;
+      location?: string;
+      document_url?: string;
+      documents?: any[];
+    },
+  ) {
+    // 1. Fetch the driver and verify ownership
+    const { data: driver, error: fetchErr } = await this.supabase.admin
+      .from('drivers')
+      .select('*, agent:agents!registered_by(*)')
+      .eq('id', driverId)
+      .single();
+
+    if (fetchErr || !driver) throw new NotFoundException('Driver not found');
+
+    const agent = driver.agent as any;
+    if (agent.telegram_id !== agentTelegramId) {
+      throw new ForbiddenException('You can only appeal your own drivers');
+    }
+
+    // 2. Enforce rules: must be DECLINED and not yet appealed
+    if (driver.status !== 'DECLINED') {
+      throw new BadRequestException('You can only appeal a declined driver');
+    }
+    if (driver.appealed) {
+      throw new BadRequestException(
+        'You have already used your one-time appeal for this driver',
+      );
+    }
+    if (!appealReason || appealReason.trim().length < 10) {
+      throw new BadRequestException(
+        'Please provide a detailed appeal reason (at least 10 characters)',
+      );
+    }
+
+    // 3. Build the update payload — only include provided fields
+    const updatePayload: Record<string, any> = {
+      status: 'PENDING',
+      appealed: true,
+      appeal_reason: appealReason.trim(),
+      admin_note: null, // Clear previous decline note so admin sees fresh
+    };
+    if (updatedFields.full_name)    updatePayload.full_name    = updatedFields.full_name.trim();
+    if (updatedFields.phone)        updatePayload.phone        = updatedFields.phone.trim();
+    if (updatedFields.car_model)    updatePayload.car_model    = updatedFields.car_model.trim();
+    if (updatedFields.license_plate) updatePayload.license_plate = updatedFields.license_plate.trim().toUpperCase();
+    if (updatedFields.location)     updatePayload.location     = updatedFields.location.trim();
+    if (updatedFields.document_url !== undefined) updatePayload.document_url = updatedFields.document_url;
+    if (updatedFields.documents !== undefined) updatePayload.documents = updatedFields.documents;
+
+    const { data: updated, error: updateErr } = await this.supabase.admin
+      .from('drivers')
+      .update(updatePayload)
+      .eq('id', driverId)
+      .select()
+      .single();
+
+    if (updateErr) throw new Error(updateErr.message);
+
+    // 4. Notify the admin via Telegram queue
+    const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+    if (adminChatId) {
+      const agentName = agent.full_name || `@${agent.telegram_username}` || 'Unknown Agent';
+      const text =
+        `📣 *Appeal Submitted*\n\n` +
+        `Agent *${agentName}* has appealed a declined driver registration.\n\n` +
+        `*Driver:* ${updated.full_name}\n` +
+        `*Phone:* ${updated.phone}\n` +
+        `*Vehicle:* ${updated.car_model}\n\n` +
+        `*Appeal Reason:*\n_${appealReason.trim()}_\n\n` +
+        `Please review this appeal in the admin portal.`;
+      await this.notifications.queueTelegramMessage(adminChatId, text);
+    }
+
+    return updated;
+  }
 }
+

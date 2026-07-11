@@ -28,6 +28,12 @@ class UpdateSettingsDto {
   @Min(0)
   @IsOptional()
   price_older_model?: number;
+
+  @IsOptional()
+  driver_document_requirements?: any;
+
+  @IsOptional()
+  agent_document_requirements?: any;
 }
 
 @Controller('settings')

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 @Controller('upload')
 @UseGuards(JwtAuthGuard)
@@ -19,7 +19,7 @@ export class UploadController {
     if (!originalFilename) throw new BadRequestException('Filename is required');
 
     const ext = originalFilename.split('.').pop() || 'bin';
-    const filename = `${uuidv4()}.${ext}`;
+    const filename = `${randomUUID()}.${ext}`;
 
     // Get a signed URL valid for 60 seconds
     const { data, error } = await this.supabase.admin.storage

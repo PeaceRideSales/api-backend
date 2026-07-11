@@ -29,6 +29,12 @@ class UpdateTargetsDto {
   @IsString() @IsOptional() monthly_target?: string | number;
 }
 
+class AppealAccountDto {
+  @IsString() appeal_reason: string;
+  @IsOptional() documents?: any[];
+  @IsOptional() @IsString() document_url?: string;
+}
+
 @Controller('agents')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AgentsController {
@@ -94,4 +100,12 @@ export class AgentsController {
   updateStatus(@Param('id') id: string, @Body() body: UpdateStatusDto) {
     return this.agents.updateStatus(id, body.status);
   }
+
+  /** Agent appeals their rejected account (one-time only) */
+  @Patch('me/appeal')
+  @Roles('agent')
+  appealAccount(@Request() req, @Body() body: AppealAccountDto) {
+    return this.agents.appealAccount(req.user.telegramId, body.appeal_reason, body.document_url, body.documents);
+  }
 }
+

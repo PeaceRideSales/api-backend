@@ -32,6 +32,8 @@ export class SettingsService {
         price_latest_model: DEFAULT_LATEST_PRICE,
         price_older_model: DEFAULT_OLDER_PRICE,
         google_sheet_id: null,
+        driver_document_requirements: [{ id: 'primary_document', name: 'Primary Document', required: true }],
+        agent_document_requirements: [{ id: 'primary_document', name: 'Primary Document', required: false }],
       };
     }
 
@@ -48,6 +50,8 @@ export class SettingsService {
     google_sheet_id?: string;
     price_latest_model?: number;
     price_older_model?: number;
+    driver_document_requirements?: any;
+    agent_document_requirements?: any;
   }, adminId?: string) {
 
     const patch: Record<string, any> = {};
@@ -55,6 +59,8 @@ export class SettingsService {
     if (dto.google_sheet_id           !== undefined) patch.google_sheet_id           = dto.google_sheet_id;
     if (dto.price_latest_model        !== undefined) patch.price_latest_model        = dto.price_latest_model;
     if (dto.price_older_model         !== undefined) patch.price_older_model         = dto.price_older_model;
+    if (dto.driver_document_requirements !== undefined) patch.driver_document_requirements = dto.driver_document_requirements;
+    if (dto.agent_document_requirements !== undefined) patch.agent_document_requirements = dto.agent_document_requirements;
 
     // Try UPSERT first — handles both row-exists and row-missing cases
     const { data, error } = await this.supabase.admin

@@ -22,20 +22,30 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
 
 import { TelegramModule } from './telegram/telegram.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     ScheduleModule.forRoot(),
     BullModule.forRootAsync({
-      useFactory: () => ({
-        connection: {
-          host: process.env.REDIS_HOST || 'localhost',
-          port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
-          password: process.env.REDIS_PASSWORD || undefined,
-          tls: process.env.REDIS_HOST && process.env.REDIS_HOST !== 'localhost' ? {} : undefined,
-        },
-      }),
+      useFactory: () => {
+        // Production (Upstash): REDIS_PASSWORD is set → eager connect with TLS
+        const isProduction = !!process.env.REDIS_PASSWORD;
+        return {
+          connection: {
+            host: process.env.REDIS_HOST || 'localhost',
+            port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
+            password: process.env.REDIS_PASSWORD || undefined,
+            tls: isProduction ? {} : undefined,
+            // Local dev: lazy so a missing Redis doesn't crash the app.
+            // Production: eager connect so queue workers start immediately.
+            lazyConnect: !isProduction,
+            enableOfflineQueue: false,
+            maxRetriesPerRequest: null,
+          },
+        };
+      },
     }),
     ThrottlerModule.forRoot([{
       name: 'global',

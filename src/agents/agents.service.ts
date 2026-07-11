@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AgentsService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private supabase: SupabaseService,
+    private notifications: NotificationsService,
+  ) {}
 
   async findAll() {
     const { data, error } = await this.supabase.admin
@@ -118,5 +122,55 @@ export class AgentsService {
     })).sort((a, b) => b.verified_drivers - a.verified_drivers).slice(0, 10);
 
     return leaderboard;
+  }
+
+  async appealAccount(telegramId: number, appealReason: string, documentUrl?: string, documents?: any[]) {
+    const agent = await this.findByTelegramId(telegramId);
+    if (!agent) throw new NotFoundException('Agent not found');
+
+    if (agent.status !== 'REJECTED') {
+      throw new BadRequestException('Your account is not currently rejected');
+    }
+    if ((agent as any).appealed) {
+      throw new BadRequestException(
+        'You have already submitted a one-time appeal for your account',
+      );
+    }
+    if (!appealReason || appealReason.trim().length < 10) {
+      throw new BadRequestException(
+        'Please provide a detailed appeal reason (at least 10 characters)',
+      );
+    }
+
+    const updatePayload: Record<string, any> = {
+      status: 'PENDING',
+      appealed: true,
+      appeal_reason: appealReason.trim(),
+    };
+    if (documentUrl !== undefined) updatePayload.document_url = documentUrl;
+    if (documents !== undefined) updatePayload.documents = documents;
+
+    const { data, error } = await this.supabase.admin
+      .from('agents')
+      .update(updatePayload)
+      .eq('telegram_id', telegramId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    // Notify admin
+    const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+    if (adminChatId) {
+      const agentName = (agent as any).full_name || `@${(agent as any).telegram_username}` || 'Unknown';
+      const text =
+        `📣 *Agent Account Appeal*\n\n` +
+        `Agent *${agentName}* has submitted an appeal for their rejected account.\n\n` +
+        `*Appeal Reason:*\n_${appealReason.trim()}_\n\n` +
+        `Please review this appeal in the admin portal.`;
+      await this.notifications.queueTelegramMessage(adminChatId, text);
+    }
+
+    return data;
   }
 }

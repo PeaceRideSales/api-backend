@@ -22,17 +22,30 @@ class CreateDriverDto {
   @IsEnum(['LATEST_OR_EV', 'OLDER']) vehicle_category: string;
   @IsString() car_model: string;
   @IsString() location: string;
-  @IsOptional() @IsString() document_url?: string;
+  @IsOptional() documents?: any[];
+  @IsOptional() @IsString() document_url?: string; // Keep for backwards compatibility
   @IsString() telegram_init_data: string;
 }
 
 class UpdateDocumentDto {
-  @IsUrl() document_url: string;
+  @IsOptional() @IsUrl() document_url?: string;
+  @IsOptional() documents?: any[];
   @IsString() telegram_init_data: string;
 }
 
 class DeclineDriverDto {
   @IsOptional() @IsString() admin_note?: string;
+}
+
+class AppealDriverDto {
+  @IsString() appeal_reason: string;
+  @IsOptional() @IsString() full_name?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() car_model?: string;
+  @IsOptional() @IsString() license_plate?: string;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() @IsString() document_url?: string;
+  @IsOptional() documents?: any[];
 }
 
 @Controller('drivers')
@@ -103,6 +116,18 @@ export class DriversController {
     @Request() req,
     @Body() body: UpdateDocumentDto,
   ) {
-    return this.drivers.updateDocument(id, req.user.telegramId, body.document_url);
+    return this.drivers.updateDocument(id, req.user.telegramId, body.document_url, body.documents);
+  }
+
+  /** Agent appeals a declined driver (one-time only) */
+  @Patch(':id/appeal')
+  @Roles('agent')
+  appealDriver(
+    @Param('id') id: string,
+    @Request() req,
+    @Body() body: AppealDriverDto,
+  ) {
+    const { appeal_reason, ...updatedFields } = body;
+    return this.drivers.appealDriver(id, req.user.telegramId, appeal_reason, updatedFields);
   }
 }

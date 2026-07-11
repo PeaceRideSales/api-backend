@@ -18,6 +18,7 @@ export class StatsService {
       { count: drivers_today },
       { count: drivers_this_week },
       { count: drivers_this_month },
+      { count: verified_drivers },
     ] = await Promise.all([
       this.supabase.admin.from('drivers').select('*', { count: 'exact', head: true }),
       this.supabase.admin.from('agents').select('*', { count: 'exact', head: true }).eq('status', 'APPROVED'),
@@ -25,6 +26,7 @@ export class StatsService {
       this.supabase.admin.from('drivers').select('*', { count: 'exact', head: true }).gte('created_at', todayStart),
       this.supabase.admin.from('drivers').select('*', { count: 'exact', head: true }).gte('created_at', weekStart),
       this.supabase.admin.from('drivers').select('*', { count: 'exact', head: true }).gte('created_at', monthStart),
+      this.supabase.admin.from('drivers').select('*', { count: 'exact', head: true }).eq('status', 'VERIFIED'),
     ]);
 
     return {
@@ -34,6 +36,7 @@ export class StatsService {
       drivers_today: drivers_today ?? 0,
       drivers_this_week: drivers_this_week ?? 0,
       drivers_this_month: drivers_this_month ?? 0,
+      verified_drivers: verified_drivers ?? 0,
     };
   }
 
