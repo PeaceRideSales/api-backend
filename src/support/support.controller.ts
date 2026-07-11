@@ -40,21 +40,15 @@ export class SupportController {
   @Post('message')
   @Roles('agent')
   async sendMessage(@Request() req, @Body() body: SendSupportMessageDto) {
-    const { data: agent } = await this.supabase.admin
-      .from('agents')
-      .select('id, full_name, telegram_username, telegram_id')
-      .eq('telegram_id', req.user.telegramId)
-      .single();
-
-    if (!agent) {
-      throw new NotFoundException('Agent not found');
-    }
+    // req.user.userId is the agent UUID (set from JWT sub claim)
+    const agentId = req.user.userId;
+    if (!agentId) throw new NotFoundException('Agent not identified in token');
 
     // 1. Save to DB
     const { data: message, error } = await this.supabase.admin
       .from('support_messages')
       .insert({
-        agent_id: agent.id,
+        agent_id: agentId,
         sender_type: 'AGENT',
         message_type: body.type,
         message: body.body,
@@ -63,29 +57,40 @@ export class SupportController {
       .select()
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error('[Support] DB insert error:', error);
+      throw new Error(error.message);
+    }
 
-    // 2. Notify Admins
-    const agentName = agent?.full_name || `@${agent?.telegram_username}` || 'Unknown Agent';
-    const agentId = agent?.telegram_id;
+    // 2. Notify Admins via Telegram (best-effort, don't fail if this errors)
+    try {
+      const { data: agent } = await this.supabase.admin
+        .from('agents')
+        .select('full_name, telegram_username, telegram_id')
+        .eq('id', agentId)
+        .single();
 
-    const adminChatIdsRaw = this.config.get<string>('ADMIN_TELEGRAM_ID');
-    if (adminChatIdsRaw) {
-      const adminChatIds = adminChatIdsRaw.split(',').map(id => id.trim()).filter(id => id);
-      const typeLabel = body.type.charAt(0).toUpperCase() + body.type.slice(1);
-      
-      let text = `📩 *Support Message Received*\n\n` +
-                 `*From:* ${agentName} (ID: ${agentId})\n` +
-                 `*Type:* ${typeLabel}\n\n` +
-                 `*Message:*\n_${body.body}_`;
-      
-      if (body.document_url) {
-        text += `\n\n🔗 [View Attachment](${body.document_url})`;
+      const adminChatIdsRaw = this.config.get<string>('ADMIN_TELEGRAM_ID');
+      if (adminChatIdsRaw && agent) {
+        const adminChatIds = adminChatIdsRaw.split(',').map(id => id.trim()).filter(id => id);
+        const agentName = agent.full_name || `@${agent.telegram_username}` || 'Unknown Agent';
+        const typeLabel = body.type.charAt(0).toUpperCase() + body.type.slice(1);
+
+        let text = `📩 *Support Message Received*\n\n` +
+                   `*From:* ${agentName} (TG: ${agent.telegram_id})\n` +
+                   `*Type:* ${typeLabel}\n\n` +
+                   `*Message:*\n_${body.body}_`;
+
+        if (body.document_url) {
+          text += `\n\n🔗 [View Attachment](${body.document_url})`;
+        }
+
+        for (const chatId of adminChatIds) {
+          await this.notifications.queueTelegramMessage(chatId, text);
+        }
       }
-
-      for (const chatId of adminChatIds) {
-        await this.notifications.queueTelegramMessage(chatId, text);
-      }
+    } catch (notifyErr) {
+      console.warn('[Support] Failed to notify admin:', notifyErr);
     }
 
     return message;
