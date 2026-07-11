@@ -67,6 +67,7 @@ import { SupportModule } from './support/support.module';
     AuditLogsModule,
     TelegramModule,
     NotificationsModule,
+    SupportModule,
   ],
   providers: [
     {
