@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Param } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Param, NotFoundException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -45,6 +45,10 @@ export class SupportController {
       .select('id, full_name, telegram_username, telegram_id')
       .eq('telegram_id', req.user.telegramId)
       .single();
+
+    if (!agent) {
+      throw new NotFoundException('Agent not found');
+    }
 
     // 1. Save to DB
     const { data: message, error } = await this.supabase.admin
