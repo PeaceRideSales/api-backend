@@ -13,7 +13,13 @@ import { DriversService } from './drivers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { IsString, IsOptional, IsUrl, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsUrl, IsEnum, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class DocumentItemDto {
+  @IsString() type_id: string;
+  @IsString() url: string;
+}
 
 class CreateDriverDto {
   @IsString() full_name: string;
@@ -22,14 +28,26 @@ class CreateDriverDto {
   @IsEnum(['LATEST_OR_EV', 'OLDER']) vehicle_category: string;
   @IsString() car_model: string;
   @IsString() location: string;
-  @IsOptional() documents?: any[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DocumentItemDto)
+  documents?: DocumentItemDto[];
+
   @IsOptional() @IsString() document_url?: string; // Keep for backwards compatibility
   @IsString() telegram_init_data: string;
 }
 
 class UpdateDocumentDto {
   @IsOptional() @IsUrl() document_url?: string;
-  @IsOptional() documents?: any[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DocumentItemDto)
+  documents?: DocumentItemDto[];
+
   @IsString() telegram_init_data: string;
 }
 
@@ -45,7 +63,12 @@ class AppealDriverDto {
   @IsOptional() @IsString() license_plate?: string;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() document_url?: string;
-  @IsOptional() documents?: any[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DocumentItemDto)
+  documents?: DocumentItemDto[];
 }
 
 @Controller('drivers')

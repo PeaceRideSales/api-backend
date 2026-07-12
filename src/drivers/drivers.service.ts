@@ -31,6 +31,28 @@ export class DriversService {
     private notifications: NotificationsService,
   ) {}
 
+  /**
+   * Sanitize a raw documents array to ensure each entry is a proper { type_id, url } object.
+   * Filters out empty arrays, null, undefined, objects missing a url, and string-only entries.
+   */
+  private sanitizeDocuments(docs: any[]): { type_id: string; url: string }[] {
+    if (!Array.isArray(docs)) return [];
+    return docs
+      .flatMap(d => {
+        // Skip plain empty arrays or null-ish
+        if (Array.isArray(d) || d == null) return [];
+        // Accept plain string as primary_document
+        if (typeof d === 'string' && d.trim()) return [{ type_id: 'primary_document', url: d.trim() }];
+        // Accept proper objects
+        if (typeof d === 'object') {
+          const url = (d.url || d.document_url || d.file_url || '').trim();
+          const type_id = (d.type_id || 'primary_document').trim();
+          if (url) return [{ type_id, url }];
+        }
+        return [];
+      });
+  }
+
   async create(agentTelegramId: number, dto: CreateDriverDto) {
     // Verify agent is approved
     const agent = await this.agents.findByTelegramId(agentTelegramId);
@@ -50,7 +72,7 @@ export class DriversService {
           car_model: dto.car_model,
           location: dto.location,
           document_url: dto.document_url || null,
-          documents: dto.documents || [],
+          documents: this.sanitizeDocuments(dto.documents || []),
           registered_by: agent.id,
         })
         .select()
@@ -308,7 +330,7 @@ export class DriversService {
     // Update driver document
     const updatePayload: any = {};
     if (documentUrl !== undefined) updatePayload.document_url = documentUrl;
-    if (documents !== undefined) updatePayload.documents = documents;
+    if (documents !== undefined) updatePayload.documents = this.sanitizeDocuments(documents);
 
     const { data: updated, error: updateErr } = await this.supabase.admin
       .from('drivers')
@@ -396,7 +418,7 @@ export class DriversService {
     if (updatedFields.license_plate) updatePayload.license_plate = updatedFields.license_plate.trim().toUpperCase();
     if (updatedFields.location)     updatePayload.location     = updatedFields.location.trim();
     if (updatedFields.document_url !== undefined) updatePayload.document_url = updatedFields.document_url;
-    if (updatedFields.documents !== undefined) updatePayload.documents = updatedFields.documents;
+    if (updatedFields.documents !== undefined) updatePayload.documents = this.sanitizeDocuments(updatedFields.documents);
 
     const { data: updated, error: updateErr } = await this.supabase.admin
       .from('drivers')

@@ -9,6 +9,20 @@ export class AgentsService {
     private notifications: NotificationsService,
   ) {}
 
+  private sanitizeDocuments(docs: any[]): { type_id: string; url: string }[] {
+    if (!Array.isArray(docs)) return [];
+    return docs.flatMap(d => {
+      if (Array.isArray(d) || d == null) return [];
+      if (typeof d === 'string' && d.trim()) return [{ type_id: 'primary_document', url: d.trim() }];
+      if (typeof d === 'object') {
+        const url = (d.url || d.document_url || d.file_url || '').trim();
+        const type_id = (d.type_id || 'primary_document').trim();
+        if (url) return [{ type_id, url }];
+      }
+      return [];
+    });
+  }
+
   async findAll() {
     const { data, error } = await this.supabase.admin
       .from('agents')
@@ -170,7 +184,7 @@ export class AgentsService {
       appeal_reason: appealReason.trim(),
     };
     if (documentUrl !== undefined) updatePayload.document_url = documentUrl;
-    if (documents !== undefined) updatePayload.documents = documents;
+    if (documents !== undefined) updatePayload.documents = this.sanitizeDocuments(documents);
 
     const { data, error } = await this.supabase.admin
       .from('agents')

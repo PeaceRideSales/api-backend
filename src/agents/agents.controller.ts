@@ -11,7 +11,13 @@ import { AgentsService } from './agents.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { IsEnum, IsString, IsOptional } from 'class-validator';
+import { IsEnum, IsString, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class DocumentItemDto {
+  @IsString() type_id: string;
+  @IsString() url: string;
+}
 
 class UpdateStatusDto {
   @IsEnum(['APPROVED', 'REJECTED'])
@@ -31,7 +37,13 @@ class UpdateTargetsDto {
 
 class AppealAccountDto {
   @IsString() appeal_reason: string;
-  @IsOptional() documents?: any[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DocumentItemDto)
+  documents?: DocumentItemDto[];
+
   @IsOptional() @IsString() document_url?: string;
 }
 
