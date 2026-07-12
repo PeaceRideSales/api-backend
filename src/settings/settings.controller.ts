@@ -57,6 +57,6 @@ export class SettingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   updateSettings(@Request() req, @Body() dto: UpdateSettingsDto) {
-    return this.settingsService.updateSettings(dto, req.user.id);
+    return this.settingsService.updateSettings(dto, req.user.userId);
   }
 }

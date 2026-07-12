@@ -91,14 +91,14 @@ export class DriversController {
   @Patch(':id/verify')
   @Roles('admin')
   verifyDriver(@Param('id') id: string, @Request() req) {
-    return this.drivers.verifyDriver(id, req.user.id);
+    return this.drivers.verifyDriver(id, req.user.userId);
   }
 
   /** Admin declines a driver */
   @Patch(':id/decline')
   @Roles('admin')
   declineDriver(@Param('id') id: string, @Body('admin_note') note: string, @Request() req) {
-    return this.drivers.declineDriver(id, req.user.id, note);
+    return this.drivers.declineDriver(id, req.user.userId, note);
   }
 
   /** Admin updates driver's document */

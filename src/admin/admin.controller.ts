@@ -31,7 +31,7 @@ export class AdminController {
       sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    return { success: true };
+    return { success: true, token: data.token };
   }
 
   /** Public — admin logout */
