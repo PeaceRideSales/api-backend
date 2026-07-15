@@ -59,7 +59,8 @@ export class NotificationsService {
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: Number(chatId), text: message, parse_mode: 'Markdown' }),
+        // Use no parse_mode so arbitrary user text never breaks delivery
+        body: JSON.stringify({ chat_id: Number(chatId), text: message }),
       });
 
       if (!res.ok) {
@@ -104,15 +105,21 @@ export class NotificationsService {
       const count = agents?.length || 0;
       if (count === 0) return { success: true, sent: 0 };
 
-      // Queue messages for all agents
+      // Queue messages for all agents — continue even if one fails
+      let sent = 0;
+      let failed = 0;
       for (const agent of agents!) {
         const agentName = agent.full_name || 'Agent';
-        // Escape telegram legacy markdown characters from the user's message
-        const escapedMessage = message.replace(/[_*`\[]/g, '\\$&');
-        const formattedMessage = `📢 *Dear ${agentName},*\n\n${escapedMessage}`;
-        await this.queueTelegramMessage(String(agent.telegram_id), formattedMessage);
+        const formattedMessage = `📢 Dear ${agentName},\n\n${message}`;
+        try {
+          await this.queueTelegramMessage(String(agent.telegram_id), formattedMessage);
+          sent++;
+        } catch (e: any) {
+          console.error(`[Broadcast] Failed for agent ${agent.telegram_id}:`, e.message);
+          failed++;
+        }
       }
-      return { success: true, sent: count };
+      return { success: true, sent, failed };
     } else if (type === 'INDIVIDUAL') {
       if (!telegramId) {
         throw new Error('Telegram ID is required for individual notifications');
@@ -125,9 +132,7 @@ export class NotificationsService {
         .single();
         
       const agentName = agent?.full_name || 'Agent';
-      // Escape telegram legacy markdown characters from the user's message
-      const escapedMessage = message.replace(/[_*`\[]/g, '\\$&');
-      const formattedMessage = `📢 *Dear ${agentName},*\n\n${escapedMessage}`;
+      const formattedMessage = `📢 Dear ${agentName},\n\n${message}`;
       
       await this.queueTelegramMessage(String(telegramId), formattedMessage);
       return { success: true, sent: 1 };
