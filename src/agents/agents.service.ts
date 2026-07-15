@@ -4,6 +4,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AgentsService {
+  private leaderboardCache: any = null;
+  private leaderboardCacheTime = 0;
+  private readonly CACHE_TTL = 30000; // 30 seconds
+
   constructor(
     private supabase: SupabaseService,
     private notifications: NotificationsService,
@@ -107,6 +111,11 @@ export class AgentsService {
   }
 
   async getLeaderboard() {
+    const now = Date.now();
+    if (this.leaderboardCache && now - this.leaderboardCacheTime < this.CACHE_TTL) {
+      return this.leaderboardCache;
+    }
+
     // Get all approved agents
     const { data: agents, error: agentsErr } = await this.supabase.admin
       .from('agents')
@@ -115,7 +124,7 @@ export class AgentsService {
 
     if (agentsErr) throw new Error(agentsErr.message);
 
-    // Get all drivers with status + registered_by
+    // Get all drivers with status + registered_by (minimal columns for speed)
     const { data: drivers, error: driversErr } = await this.supabase.admin
       .from('drivers')
       .select('registered_by, status');
@@ -125,7 +134,8 @@ export class AgentsService {
     // Count verified and total per agent
     const verifiedCounts: Record<string, number> = {};
     const totalCounts: Record<string, number> = {};
-    for (const d of drivers) {
+    for (let i = 0; i < drivers.length; i++) {
+      const d = drivers[i];
       totalCounts[d.registered_by] = (totalCounts[d.registered_by] || 0) + 1;
       if (d.status === 'VERIFIED') {
         verifiedCounts[d.registered_by] = (verifiedCounts[d.registered_by] || 0) + 1;
@@ -138,6 +148,9 @@ export class AgentsService {
       verified_drivers: verifiedCounts[a.id] || 0,
       total_drivers: totalCounts[a.id] || 0,
     })).sort((a, b) => b.verified_drivers - a.verified_drivers);
+
+    this.leaderboardCache = leaderboard;
+    this.leaderboardCacheTime = now;
 
     return leaderboard;
   }
