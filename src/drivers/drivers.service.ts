@@ -390,28 +390,18 @@ export class DriversService {
       throw new ForbiddenException('You can only appeal your own drivers');
     }
 
-    // 2. Enforce rules: must be DECLINED and not yet appealed
-    if (driver.status !== 'DECLINED') {
-      throw new BadRequestException('You can only appeal a declined driver');
-    }
-    if (driver.appealed) {
-      throw new BadRequestException(
-        'You have already used your one-time appeal for this driver',
-      );
-    }
-    if (!appealReason || appealReason.trim().length < 10) {
-      throw new BadRequestException(
-        'Please provide a detailed appeal reason (at least 10 characters)',
-      );
+    if (driver.status === 'VERIFIED') {
+      throw new BadRequestException('You cannot edit a verified driver registration');
     }
 
-    // 3. Build the update payload — only include provided fields
     const updatePayload: Record<string, any> = {
       status: 'PENDING',
-      appealed: true,
-      appeal_reason: appealReason.trim(),
       admin_note: null, // Clear previous decline note so admin sees fresh
     };
+    if (appealReason && appealReason.trim().length > 0) {
+      updatePayload.appealed = true;
+      updatePayload.appeal_reason = appealReason.trim();
+    }
     if (updatedFields.full_name)    updatePayload.full_name    = updatedFields.full_name.trim();
     if (updatedFields.phone)        updatePayload.phone        = updatedFields.phone.trim();
     if (updatedFields.car_model)    updatePayload.car_model    = updatedFields.car_model.trim();
@@ -429,18 +419,17 @@ export class DriversService {
 
     if (updateErr) throw new Error(updateErr.message);
 
-    // 4. Notify the admin via Telegram queue
     const adminChatId = process.env.ADMIN_TELEGRAM_ID;
     if (adminChatId) {
       const agentName = agent.full_name || `@${agent.telegram_username}` || 'Unknown Agent';
       const text =
-        `📣 *Appeal Submitted*\n\n` +
-        `Agent *${agentName}* has appealed a declined driver registration.\n\n` +
+        `📣 *Registration Edited / Appealed*\n\n` +
+        `Agent *${agentName}* has updated a driver registration.\n\n` +
         `*Driver:* ${updated.full_name}\n` +
         `*Phone:* ${updated.phone}\n` +
         `*Vehicle:* ${updated.car_model}\n\n` +
-        `*Appeal Reason:*\n_${appealReason.trim()}_\n\n` +
-        `Please review this appeal in the admin portal.`;
+        (appealReason && appealReason.trim() ? `*Appeal Reason:*\n_${appealReason.trim()}_\n\n` : '') +
+        `Please review this in the admin portal.`;
       await this.notifications.queueTelegramMessage(adminChatId, text);
     }
 

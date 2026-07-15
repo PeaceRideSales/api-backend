@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+﻿import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
@@ -6,7 +6,7 @@ import { Job } from 'bullmq';
 export class TelegramProcessor extends WorkerHost {
   private readonly logger = new Logger(TelegramProcessor.name);
 
-  async process(job: Job<{ chat_id: number; message: string }>): Promise<void> {
+  async process(job: Job<{ id?: number; chat_id: number; message: string }>): Promise<void> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!token) return;
 
@@ -14,11 +14,11 @@ export class TelegramProcessor extends WorkerHost {
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          chat_id: job.data.chat_id, 
-          text: job.data.message, 
-          parse_mode: 'Markdown' 
-        })
+        body: JSON.stringify({
+          chat_id: job.data.chat_id,
+          text: job.data.message,
+          parse_mode: 'Markdown',
+        }),
       });
 
       if (!res.ok) {
@@ -26,10 +26,10 @@ export class TelegramProcessor extends WorkerHost {
         throw new Error(`Telegram API Error: ${res.status} ${errText}`);
       }
 
-      this.logger.log(`Successfully sent telegram message to ${job.data.chat_id}`);
+      this.logger.log(`Sent to chat ${job.data.chat_id}`);
     } catch (error: any) {
-      this.logger.error(`Failed to process telegram job ${job.id}: ${error.message}`);
-      throw error; // Let BullMQ handle retries
+      this.logger.error(`Failed job ${job.id}: ${error.message}`);
+      throw error;
     }
   }
 }

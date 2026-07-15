@@ -25,25 +25,115 @@ export class NotificationsService {
   async queueTelegramMessage(chatId: string, message: string) {
     if (!chatId || !message) return;
 
-    // If BullMQ queue is available (Redis connected), use it
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+
+    // Write to DB for logging (status starts as PENDING)
+    const { data, error: insertErr } = await this.supabase.admin
+      .from('telegram_queue')
+      .insert({ chat_id: Number(chatId), message, status: 'PENDING' })
+      .select('id')
+      .single();
+
+    if (insertErr) {
+      console.error('[Notifications] DB insert failed:', insertErr.message);
+    }
+    const dbId = data?.id;
+
+    // If BullMQ is available (Redis connected in production), delegate to the worker
     if (this.telegramQueue) {
       try {
-        await this.telegramQueue.add('sendMessage', {
-          chat_id: Number(chatId),
-          message,
-        });
-        return;
+        await this.telegramQueue.add('sendMessage', { id: dbId, chat_id: Number(chatId), message });
+        return; // Worker will update the DB status when it processes the job
       } catch (err) {
-        console.warn('[Notifications] BullMQ unavailable, falling back to Supabase queue:', (err as Error).message);
+        console.warn('[Notifications] BullMQ unavailable, sending directly:', (err as Error).message);
       }
     }
 
-    // Fallback: write directly to the telegram_queue table
-    await this.supabase.admin.from('telegram_queue').insert({
-      chat_id: Number(chatId),
-      message,
-      status: 'pending',
-    });
+    // Fallback (local dev / no Redis): send directly via Telegram API right now
+    if (!token) {
+      console.warn('[Notifications] No TELEGRAM_BOT_TOKEN set, message left as PENDING.');
+      return;
+    }
+
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: Number(chatId), text: message, parse_mode: 'Markdown' }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Telegram API ${res.status}: ${errText}`);
+      }
+
+      // Mark as delivered
+      if (dbId) {
+        await this.supabase.admin
+          .from('telegram_queue')
+          .update({ status: 'COMPLETED', processed_at: new Date().toISOString() })
+          .eq('id', dbId);
+      }
+      console.log(`[Notifications] Sent directly to chat ${chatId}`);
+    } catch (err: any) {
+      console.error('[Notifications] Direct send failed:', err.message);
+      if (dbId) {
+        await this.supabase.admin
+          .from('telegram_queue')
+          .update({ status: 'FAILED', error: err.message, processed_at: new Date().toISOString() })
+          .eq('id', dbId);
+      }
+    }
+  }
+
+
+  async broadcastNotification(type: 'ALL' | 'INDIVIDUAL', message: string, telegramId?: number) {
+    if (!message || message.trim() === '') {
+      throw new Error('Message cannot be empty');
+    }
+
+    if (type === 'ALL') {
+      // Fetch all unique agents with telegram IDs
+      const { data: agents, error } = await this.supabase.admin
+        .from('agents')
+        .select('telegram_id, full_name')
+        .not('telegram_id', 'is', null);
+
+      if (error) throw new Error(error.message);
+
+      const count = agents?.length || 0;
+      if (count === 0) return { success: true, sent: 0 };
+
+      // Queue messages for all agents
+      for (const agent of agents!) {
+        const agentName = agent.full_name || 'Agent';
+        // Escape telegram legacy markdown characters from the user's message
+        const escapedMessage = message.replace(/[_*`\[]/g, '\\$&');
+        const formattedMessage = `📢 *Dear ${agentName},*\n\n${escapedMessage}`;
+        await this.queueTelegramMessage(String(agent.telegram_id), formattedMessage);
+      }
+      return { success: true, sent: count };
+    } else if (type === 'INDIVIDUAL') {
+      if (!telegramId) {
+        throw new Error('Telegram ID is required for individual notifications');
+      }
+      
+      const { data: agent } = await this.supabase.admin
+        .from('agents')
+        .select('full_name')
+        .eq('telegram_id', telegramId)
+        .single();
+        
+      const agentName = agent?.full_name || 'Agent';
+      // Escape telegram legacy markdown characters from the user's message
+      const escapedMessage = message.replace(/[_*`\[]/g, '\\$&');
+      const formattedMessage = `📢 *Dear ${agentName},*\n\n${escapedMessage}`;
+      
+      await this.queueTelegramMessage(String(telegramId), formattedMessage);
+      return { success: true, sent: 1 };
+    }
+    
+    throw new Error('Invalid notification type');
   }
 }
 
