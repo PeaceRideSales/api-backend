@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AgentsService } from '../agents/agents.service';
 import { SettingsService } from '../settings/settings.service';
@@ -29,6 +30,7 @@ export class DriversService {
     private settings: SettingsService,
     private auditLogs: AuditLogsService,
     private notifications: NotificationsService,
+    private config: ConfigService,
   ) {}
 
   /**
@@ -91,6 +93,30 @@ export class DriversService {
         }
         throw new Error(error.message);
       }
+
+      // Notify Admin(s) in the background
+      try {
+        const adminChatIdsRaw = this.config.get<string>('ADMIN_TELEGRAM_ID');
+        if (adminChatIdsRaw) {
+          const adminChatIds = adminChatIdsRaw.split(',').map(id => id.trim()).filter(id => id);
+          for (const chatId of adminChatIds) {
+            await this.notifications.queueTelegramMessage(
+              chatId,
+              `🚨 *New Driver Registration*\n\n` +
+              `👤 *Agent:* ${agent.full_name || `@${agent.telegram_username}`}\n` +
+              `🚗 *Driver:* ${dto.full_name}\n` +
+              `📞 *Phone:* ${dto.phone}\n` +
+              `📍 *Location:* ${dto.location}\n` +
+              `🚘 *Vehicle:* ${dto.car_model} (${dto.vehicle_category})\n` +
+              `🔢 *Plate:* ${dto.license_plate}\n\n` +
+              `Please review this in the Admin Portal.`
+            );
+          }
+        }
+      } catch (notifyErr) {
+        console.warn('[Drivers] Failed to notify admin:', notifyErr);
+      }
+
       return data;
     } catch (e: any) {
       if (e instanceof BadRequestException || e instanceof ForbiddenException) {
